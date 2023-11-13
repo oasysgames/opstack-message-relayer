@@ -1,2 +1,2 @@
 # message-relayer
-Opstac message relayer developed using sdk
+Opstack message relayer developed using sdk
