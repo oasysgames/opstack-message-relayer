@@ -11,10 +11,10 @@
     "start": "ts-node ./src/service.ts",
     "test:coverage": "echo 'No tests defined.'",
     "build": "tsc -p ./tsconfig.json",
-    "clean": "rimraf  dist/ ./tsconfig.build.tsbuildinfo",
-    "lint": "yarn lint:fix && yarn lint:check",
+    "clean": "rm -rf  dist/",
+    "lint": "pnpm lint:fix && pnpm lint:check",
     "pre-commit": "lint-staged",
-    "lint:fix": "yarn lint:check --fix",
+    "lint:fix": "pnpm lint:check --fix",
     "lint:check": "eslint . --max-warnings=0"
   },
   "repository": "git@github.com:tak1827/message-relayer.git",
@@ -28,6 +28,13 @@
   },
   "devDependencies": {
     "@types/node": "^20.5.0",
+    "@typescript-eslint/eslint-plugin": "^6.7.0",
+    "eslint-config-prettier": "^8.3.0",
+    "eslint-plugin-import": "^2.26.0",
+    "eslint-plugin-prefer-arrow": "^1.2.3",
+    "eslint-plugin-prettier": "^4.0.0",
+    "eslint-plugin-unicorn": "^48.0.1",
+    "prettier": "^2.8.0",
     "ts-node": "^10.9.1",
     "typescript": "^5.1.6"
   }

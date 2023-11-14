@@ -12,7 +12,6 @@
     "noLib": false,
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
-    "rootDir": "./src",
     "outDir": "./dist",
     "typeRoots": [
       "node_modules/@types"
@@ -23,7 +22,9 @@
     "dist"
   ],
   "include": [
-    "src/**/*"
+    "src/**/*.ts",
+    "src/**/*.json",
+    "package.json",
   ]
 }
 
