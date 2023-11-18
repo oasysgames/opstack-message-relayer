@@ -1,5 +1,7 @@
 /* Imports: External */
 import { BigNumber, Contract, Signer } from 'ethers'
+import { BytesLike } from "@ethersproject/bytes";
+import { sleep } from '@eth-optimism/core-utils'
 import {
   BaseServiceV2,
   StandardOptions,
@@ -10,6 +12,7 @@ import {
 } from '@eth-optimism/common-ts'
 import {
   CrossChainMessenger,
+  StandardBridgeAdapter,
   DeepPartial,
   DEFAULT_L2_CONTRACT_ADDRESSES,
   MessageStatus,
@@ -29,6 +32,7 @@ type MessageRelayerOptions = {
   addressManager?: string
   l1CrossDomainMessenger?: string
   l1StandardBridge?: string
+  l2StandardBridge?: string
   stateCommitmentChain?: string
   canonicalTransactionChain?: string
   bondManager?: string
@@ -43,8 +47,8 @@ type MessageRelayerOptions = {
 }
 
 type MessageRelayerMetrics = {
-  highestCheckableL2Tx: Gauge
-  highestKnownL2Tx: Gauge
+  highestCheckedL2: Gauge
+  highestKnownL2: Gauge
   numRelayedMessages: Counter
 }
 
@@ -52,9 +56,20 @@ type MessageRelayerState = {
   wallet: Signer
   messenger: CrossChainMessenger
   multicall2Contract?: Contract
-  highestCheckableL2Tx: number
-  highestKnownL2Tx: number
+  highestCheckedL2: number
+  highestKnownL2: number
 }
+
+type Call = {
+  target: string
+  callData: BytesLike
+}
+
+type CallWithHeight = Call & {
+  blockHeight: number;
+}
+
+const convertToCalls = (calls: CallWithHeight[]): Call[] => calls.map(({ blockHeight, ...callProps }) => callProps);
 
 export class MessageRelayerService extends BaseServiceV2<
   MessageRelayerOptions,
@@ -95,6 +110,10 @@ export class MessageRelayerService extends BaseServiceV2<
         l1StandardBridge: {
           validator: validators.str,
           desc: 'Address of the Proxy__OVM_L1StandardBridge on Layer1.',
+        },
+        l2StandardBridge: {
+          validator: validators.str,
+          desc: 'Address of the L2StandardBridge on Layer2.',
         },
         stateCommitmentChain: {
           validator: validators.str,
@@ -149,13 +168,13 @@ export class MessageRelayerService extends BaseServiceV2<
         },
       },
       metricsSpec: {
-        highestCheckableL2Tx: {
+        highestCheckedL2: {
           type: Gauge,
-          desc: 'Highest L2 tx that has been checkable',
+          desc: 'Highest L2 tx that has been checked',
         },
-        highestKnownL2Tx: {
+        highestKnownL2: {
           type: Gauge,
-          desc: 'Highest known L2 transaction',
+          desc: 'Highest known L2 height',
         },
         numRelayedMessages: {
           type: Counter,
@@ -208,6 +227,13 @@ export class MessageRelayerService extends BaseServiceV2<
       depositConfirmationBlocks: this.options.depositConfirmationBlocks,
       l1BlockTimeSeconds: this.options.l1BlockTimeSeconds,
       // TODO: bridges: 
+      bridges: {
+        Standard: {
+          Adapter: StandardBridgeAdapter,
+          l1Bridge: this.options.l1StandardBridge,
+          l2Bridge: this.options.l2StandardBridge,
+        },
+      },
       contracts,
       bedrock: true,
     })
@@ -222,20 +248,162 @@ export class MessageRelayerService extends BaseServiceV2<
       )
     }
 
-    this.state.highestCheckableL2Tx = this.options.fromL2TransactionIndex || 1
-    this.state.highestKnownL2Tx =
+    this.state.highestCheckedL2 = this.options.fromL2TransactionIndex || 1
+    this.state.highestKnownL2 =
       await this.state.messenger.l2Provider.getBlockNumber()
   }
 
   async routes(router: ExpressRouter): Promise<void> {
-    router.get('/status', async (req, res) => {
+    router.get('/status', async (req: any, res: any) => {
       return res.status(200).json({
-        // ok: !this.state.diverged,
+        highestCheckedL2: this.state.highestCheckedL2,
+        highestKnownL2: this.state.highestKnownL2,
       })
     })
   }
 
   protected async main(): Promise<void> {
+    await this.handleMultipleBlock()
+  }
+
+  // Compute expected gas cost of multicall
+  // from multiplying the first gas cost of proveMessage by the number of messages
+  protected computeExpectedMulticallGas(base: number, size: number): number {
+    return base * size * this.options.gasMultiplier;
+  }
+
+  protected async handleMultipleBlock(): Promise<void> {
+    // Should never happen.
+    if (
+      !this.state.multicall2Contract ||
+      !this.options.l1CrossDomainMessenger
+    ) {
+      throw new Error(
+        `You can not use mulitcall to handle multiple bridge messages`
+      )
+    }
+
+    // Update metrics
+    this.metrics.highestCheckedL2.set(this.state.highestCheckedL2)
+    this.metrics.highestKnownL2.set(this.state.highestKnownL2)
+    this.logger.debug(`highestCheckedL2: ${this.state.highestCheckedL2}`)
+    this.logger.debug(`highestKnownL2: ${this.state.highestKnownL2}`)
+
+    // If we're already at the tip, then update the latest tip and loop again.
+    if (this.state.highestCheckedL2 > this.state.highestKnownL2) {
+      this.state.highestKnownL2 =
+        await this.state.messenger.l2Provider.getBlockNumber()
+
+      // Sleeping for 1000ms is good enough since this is meant for development and not for live
+      // networks where we might want to restrict the number of requests per second.
+      await sleep(1000)
+      this.logger.debug(`highestCheckedL2 > this.state.highestKnownL2`)
+      return
+    }
+
+
+    let calldatas: CallWithHeight[] = []
+    let gasProveMessage: number
+    const target = this.state.messenger.contracts.l1.OptimismPortal.target
+
+    for (
+      let i = this.state.highestCheckedL2;
+      i < this.state.highestCheckedL2 + this.options.maxBlockBatchSize;
+      i++
+    ) {
+      const block =
+        await this.state.messenger.l2Provider.getBlockWithTransactions(i)
+      if (block === null) {
+        break
+      }
+
+      // empty block is allowed
+      if (block.transactions.length === 0) {
+        continue
+      }
+
+      for (let j = 0; j < block.transactions.length; j++) {
+        const txHash = block.transactions[j].hash
+        const status = await this.state.messenger.getMessageStatus(txHash)
+        this.logger.debug(`txHash: ${txHash}, status: ${MessageStatus[status]})`)
+
+        if (status !== MessageStatus.READY_TO_PROVE) {
+          continue
+        }
+
+        // Estimate gas cost for proveMessage
+        if (gasProveMessage === undefined) {
+          gasProveMessage = (await this.state.messenger.estimateGas.proveMessage(txHash)).toNumber()
+        }
+
+        // Populate calldata, the append to the list
+        const callData = (await this.state.messenger.populateTransaction.proveMessage(txHash)).data
+        calldatas.push({ target, callData, blockHeight: block.number })
+
+        // go next when lower than multicall allowed gas limit
+        const exGasWithSafety = this.computeExpectedMulticallGas(gasProveMessage, calldatas.length)
+        if (exGasWithSafety < this.options.multicallGasLimit) {
+          continue;
+        }
+
+        // send multicall, then update the checked L2 height
+        // return the remaining callcatas, those are failed due to gas limit
+        calldatas = await this.multicall(calldatas)
+      }
+    }
+
+    // flush the left calldata
+    if (0 < calldatas.length)  await this.multicall(calldatas);
+  }
+
+  protected async multicall(calldatas: CallWithHeight[]): Promise<CallWithHeight[]> {
+    const requireSuccess = true
+    let estimatedGas: BigNumber;
+    try {
+      estimatedGas = await this.state.multicall2Contract.estimateGas.tryAggregate(
+        requireSuccess,
+        convertToCalls(calldatas),
+      )
+    } catch (err) {
+      // when the gas is higher than the block gas limit
+      if (err.message.includes('gas required exceeds allowance')) {
+        // ecursively call excluding the last element
+        const remainingCalls = await this.multicall(calldatas.slice(0, -1));
+        return [calldatas[calldatas.length-1], ...remainingCalls]
+      } else {
+        throw err
+      }
+    }
+    const overrideOptions = {
+      gasLimit: ~~(
+        estimatedGas.toNumber() * (this.options.gasMultiplier || 1.0)
+      ),
+    }
+    const tx = await this.state.multicall2Contract.tryAggregate(
+      requireSuccess,
+      convertToCalls(calldatas),
+      overrideOptions
+    )
+    await tx.wait()
+    this.logger.info(`relayer sent multicall: ${tx.hash}`)
+
+    this.updateHighestCheckedL2(calldatas)
+    this.metrics.numRelayedMessages.inc(calldatas.length)
+
+    return []
+  }
+
+  protected updateHighestCheckedL2(calldatas: CallWithHeight[]): void {
+    // assume the last element is the hightst, so doen't traverse all the element
+    const highest = calldatas[calldatas.length-1].blockHeight
+    // const highest = calldatas.reduce((maxCall, currentCall) => {
+    //   if (!maxCall || currentCall.blockHeight > maxCall.blockHeight) {
+    //     return currentCall;
+    //   }
+    //   return maxCall;
+    // }).blockHeight
+    this.state.highestCheckedL2 = highest
+    this.logger.info(`updated highest checked L2: ${highest}`)
   }
 
 }

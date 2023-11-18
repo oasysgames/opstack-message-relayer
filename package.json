@@ -27,6 +27,8 @@
     "ethers": "^5.7.2"
   },
   "devDependencies": {
+    "@eth-optimism/core-utils": "^0.13.1",
+    "@ethersproject/bytes": "^5.7.0",
     "@types/node": "^20.5.0",
     "@typescript-eslint/eslint-plugin": "^6.7.0",
     "eslint-config-prettier": "^8.3.0",
