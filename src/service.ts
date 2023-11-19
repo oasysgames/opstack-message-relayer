@@ -1,8 +1,6 @@
-/* Imports: External */
 import { promises as fs } from 'fs'
 import * as path from 'path'
 import { BigNumber, Contract, Signer } from 'ethers'
-import { BytesLike } from '@ethersproject/bytes'
 import { sleep } from '@eth-optimism/core-utils'
 import {
   BaseServiceV2,
@@ -24,7 +22,7 @@ import {
 } from '@eth-optimism/sdk'
 import { Provider } from '@ethersproject/abstract-provider'
 import { version } from '../package.json'
-import Multicall2 from './contracts/Multicall2.json'
+import { Multicaller, CallWithHeight } from './multicaller'
 
 type MessageRelayerOptions = {
   l1RpcProvider: Provider
@@ -32,14 +30,14 @@ type MessageRelayerOptions = {
   l1Wallet: Signer
   fromL2TransactionIndex?: number
   addressManager?: string
+  multicall?: string
+  multicallTargetGas?: number
   l1CrossDomainMessenger?: string
   l1StandardBridge?: string
   l2StandardBridge?: string
   stateCommitmentChain?: string
   canonicalTransactionChain?: string
   bondManager?: string
-  isMulticall?: string
-  multicallGasLimit?: number
   maxBlockBatchSize?: number
   pollInterval?: number
   receiptTimeout?: number
@@ -58,22 +56,10 @@ type MessageRelayerMetrics = {
 type MessageRelayerState = {
   wallet: Signer
   messenger: CrossChainMessenger
-  multicall2Contract?: Contract
+  multicaller?: Multicaller
   highestCheckedL2: number
   highestKnownL2: number
 }
-
-type Call = {
-  target: string
-  callData: BytesLike
-}
-
-type CallWithHeight = Call & {
-  blockHeight: number
-}
-
-const convertToCalls = (calls: CallWithHeight[]): Call[] =>
-  calls.map(({ blockHeight, ...callProps }) => callProps)
 
 export class MessageRelayerService extends BaseServiceV2<
   MessageRelayerOptions,
@@ -107,6 +93,15 @@ export class MessageRelayerService extends BaseServiceV2<
           validator: validators.str,
           desc: 'Address of the Lib_AddressManager on Layer1.',
         },
+        multicall: {
+          validator: validators.str,
+          desc: 'Address of the multicall2 on Layer1.',
+        },
+        multicallTargetGas: {
+          validator: validators.num,
+          desc: 'gas target for multicall contract when the relay',
+          default: 1500000,
+        },
         l1CrossDomainMessenger: {
           validator: validators.str,
           desc: 'Address of the Proxy__OVM_L1CrossDomainMessenger on Layer1.',
@@ -130,15 +125,6 @@ export class MessageRelayerService extends BaseServiceV2<
         bondManager: {
           validator: validators.str,
           desc: 'Address of the BondManager on Layer1.',
-        },
-        isMulticall: {
-          validator: validators.str,
-          desc: 'Whether use multicall contract when the relay.',
-        },
-        multicallGasLimit: {
-          validator: validators.num,
-          desc: 'gas limit for multicall contract when the relay',
-          default: 1500000,
         },
         maxBlockBatchSize: {
           validator: validators.num,
@@ -247,15 +233,12 @@ export class MessageRelayerService extends BaseServiceV2<
       bedrock: true,
     })
 
-    if (this.options.isMulticall) {
-      const multicall2ContractAddress =
-        '0x5200000000000000000000000000000000000022'
-      this.state.multicall2Contract = new Contract(
-        multicall2ContractAddress,
-        Multicall2.abi,
-        this.state.wallet
-      )
-    }
+    this.state.multicaller = new Multicaller(
+      this.options.multicall,
+      this.state.wallet,
+      this.options.multicallTargetGas,
+      this.options.gasMultiplier
+    )
 
     const lastState = await this.readStateFromFile()
     this.state.highestCheckedL2 =
@@ -283,23 +266,7 @@ export class MessageRelayerService extends BaseServiceV2<
     await super.stop()
   }
 
-  // Compute expected gas cost of multicall
-  // from multiplying the first gas cost of proveMessage by the number of messages
-  protected computeExpectedMulticallGas(base: number, size: number): number {
-    return base * size * this.options.gasMultiplier
-  }
-
   protected async handleMultipleBlock(): Promise<void> {
-    // Should never happen.
-    if (
-      !this.state.multicall2Contract ||
-      !this.options.l1CrossDomainMessenger
-    ) {
-      throw new Error(
-        `You can not use mulitcall to handle multiple bridge messages`
-      )
-    }
-
     // Update metrics
     this.metrics.highestCheckedL2.set(this.state.highestCheckedL2)
     this.metrics.highestKnownL2.set(this.state.highestKnownL2)
@@ -319,8 +286,12 @@ export class MessageRelayerService extends BaseServiceV2<
     }
 
     let calldatas: CallWithHeight[] = []
-    let gasProveMessage: number
     const target = this.state.messenger.contracts.l1.OptimismPortal.target
+    const callback = (hash: string, calls: CallWithHeight[]) => {
+      this.logger.info(`relayer sent multicall: ${hash}`)
+      this.updateHighestCheckedL2(calls)
+      this.metrics.numRelayedMessages.inc(calls.length)
+    }
 
     for (
       let i = this.state.highestCheckedL2;
@@ -350,10 +321,11 @@ export class MessageRelayerService extends BaseServiceV2<
         }
 
         // Estimate gas cost for proveMessage
-        if (gasProveMessage === undefined) {
-          gasProveMessage = (
+        if (this.state.multicaller?.singleCallGas === 0) {
+          const estimatedGas = (
             await this.state.messenger.estimateGas.proveMessage(txHash)
           ).toNumber()
+          this.state.multicaller.singleCallGas = estimatedGas
         }
 
         // Populate calldata, the append to the list
@@ -362,63 +334,20 @@ export class MessageRelayerService extends BaseServiceV2<
         ).data
         calldatas.push({ target, callData, blockHeight: block.number })
 
-        // go next when lower than multicall allowed gas limit
-        const exGasWithSafety = this.computeExpectedMulticallGas(
-          gasProveMessage,
-          calldatas.length
-        )
-        if (exGasWithSafety < this.options.multicallGasLimit) {
+        // go next when lower than multicall target gas
+        if (!this.state.multicaller?.isOvertargetGas(calldatas.length)) {
           continue
         }
 
         // send multicall, then update the checked L2 height
         // return the remaining callcatas, those are failed due to gas limit
-        calldatas = await this.multicall(calldatas)
+        calldatas = await this.state.multicaller?.multicall(calldatas, callback)
       }
     }
 
     // flush the left calldata
-    if (0 < calldatas.length) await this.multicall(calldatas)
-  }
-
-  protected async multicall(
-    calldatas: CallWithHeight[]
-  ): Promise<CallWithHeight[]> {
-    const requireSuccess = true
-    let estimatedGas: BigNumber
-    try {
-      estimatedGas =
-        await this.state.multicall2Contract.estimateGas.tryAggregate(
-          requireSuccess,
-          convertToCalls(calldatas)
-        )
-    } catch (err) {
-      // when the gas is higher than the block gas limit
-      if (err.message.includes('gas required exceeds allowance')) {
-        // ecursively call excluding the last element
-        const remainingCalls = await this.multicall(calldatas.slice(0, -1))
-        return [calldatas[calldatas.length - 1], ...remainingCalls]
-      } else {
-        throw err
-      }
-    }
-    const overrideOptions = {
-      gasLimit: ~~(
-        estimatedGas.toNumber() * (this.options.gasMultiplier || 1.0)
-      ),
-    }
-    const tx = await this.state.multicall2Contract.tryAggregate(
-      requireSuccess,
-      convertToCalls(calldatas),
-      overrideOptions
-    )
-    await tx.wait()
-    this.logger.info(`relayer sent multicall: ${tx.hash}`)
-
-    this.updateHighestCheckedL2(calldatas)
-    this.metrics.numRelayedMessages.inc(calldatas.length)
-
-    return []
+    if (0 < calldatas.length)
+      await this.state.multicaller?.multicall(calldatas, callback)
   }
 
   protected updateHighestCheckedL2(calldatas: CallWithHeight[]): void {
