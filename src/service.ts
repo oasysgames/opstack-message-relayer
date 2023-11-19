@@ -1,6 +1,8 @@
 /* Imports: External */
+import { promises as fs } from 'fs'
+import * as path from 'path'
 import { BigNumber, Contract, Signer } from 'ethers'
-import { BytesLike } from "@ethersproject/bytes";
+import { BytesLike } from '@ethersproject/bytes'
 import { sleep } from '@eth-optimism/core-utils'
 import {
   BaseServiceV2,
@@ -44,6 +46,7 @@ type MessageRelayerOptions = {
   gasMultiplier?: number
   depositConfirmationBlocks?: number
   l1BlockTimeSeconds?: number
+  stateFilePath?: string
 }
 
 type MessageRelayerMetrics = {
@@ -66,10 +69,11 @@ type Call = {
 }
 
 type CallWithHeight = Call & {
-  blockHeight: number;
+  blockHeight: number
 }
 
-const convertToCalls = (calls: CallWithHeight[]): Call[] => calls.map(({ blockHeight, ...callProps }) => callProps);
+const convertToCalls = (calls: CallWithHeight[]): Call[] =>
+  calls.map(({ blockHeight, ...callProps }) => callProps)
 
 export class MessageRelayerService extends BaseServiceV2<
   MessageRelayerOptions,
@@ -166,6 +170,11 @@ export class MessageRelayerService extends BaseServiceV2<
           desc: 'Block time in seconds for the L1 chain.',
           default: 15,
         },
+        stateFilePath: {
+          validator: validators.str,
+          desc: 'the file of state file whitch holds the last state',
+          default: '~/.message-relayer/state.json',
+        },
       },
       metricsSpec: {
         highestCheckedL2: {
@@ -226,7 +235,7 @@ export class MessageRelayerService extends BaseServiceV2<
       l2ChainId,
       depositConfirmationBlocks: this.options.depositConfirmationBlocks,
       l1BlockTimeSeconds: this.options.l1BlockTimeSeconds,
-      // TODO: bridges: 
+      // TODO: bridges:
       bridges: {
         Standard: {
           Adapter: StandardBridgeAdapter,
@@ -248,7 +257,9 @@ export class MessageRelayerService extends BaseServiceV2<
       )
     }
 
-    this.state.highestCheckedL2 = this.options.fromL2TransactionIndex || 1
+    const lastState = await this.readStateFromFile()
+    this.state.highestCheckedL2 =
+      this.options.fromL2TransactionIndex || lastState.highestCheckedL2
     this.state.highestKnownL2 =
       await this.state.messenger.l2Provider.getBlockNumber()
   }
@@ -266,10 +277,16 @@ export class MessageRelayerService extends BaseServiceV2<
     await this.handleMultipleBlock()
   }
 
+  // override to write the last state
+  public async stop(): Promise<void> {
+    await this.writeStateToFile(this.state)
+    await super.stop()
+  }
+
   // Compute expected gas cost of multicall
   // from multiplying the first gas cost of proveMessage by the number of messages
   protected computeExpectedMulticallGas(base: number, size: number): number {
-    return base * size * this.options.gasMultiplier;
+    return base * size * this.options.gasMultiplier
   }
 
   protected async handleMultipleBlock(): Promise<void> {
@@ -301,7 +318,6 @@ export class MessageRelayerService extends BaseServiceV2<
       return
     }
 
-
     let calldatas: CallWithHeight[] = []
     let gasProveMessage: number
     const target = this.state.messenger.contracts.l1.OptimismPortal.target
@@ -325,7 +341,9 @@ export class MessageRelayerService extends BaseServiceV2<
       for (let j = 0; j < block.transactions.length; j++) {
         const txHash = block.transactions[j].hash
         const status = await this.state.messenger.getMessageStatus(txHash)
-        this.logger.debug(`txHash: ${txHash}, status: ${MessageStatus[status]})`)
+        this.logger.debug(
+          `txHash: ${txHash}, status: ${MessageStatus[status]})`
+        )
 
         if (status !== MessageStatus.READY_TO_PROVE) {
           continue
@@ -333,17 +351,24 @@ export class MessageRelayerService extends BaseServiceV2<
 
         // Estimate gas cost for proveMessage
         if (gasProveMessage === undefined) {
-          gasProveMessage = (await this.state.messenger.estimateGas.proveMessage(txHash)).toNumber()
+          gasProveMessage = (
+            await this.state.messenger.estimateGas.proveMessage(txHash)
+          ).toNumber()
         }
 
         // Populate calldata, the append to the list
-        const callData = (await this.state.messenger.populateTransaction.proveMessage(txHash)).data
+        const callData = (
+          await this.state.messenger.populateTransaction.proveMessage(txHash)
+        ).data
         calldatas.push({ target, callData, blockHeight: block.number })
 
         // go next when lower than multicall allowed gas limit
-        const exGasWithSafety = this.computeExpectedMulticallGas(gasProveMessage, calldatas.length)
+        const exGasWithSafety = this.computeExpectedMulticallGas(
+          gasProveMessage,
+          calldatas.length
+        )
         if (exGasWithSafety < this.options.multicallGasLimit) {
-          continue;
+          continue
         }
 
         // send multicall, then update the checked L2 height
@@ -353,23 +378,26 @@ export class MessageRelayerService extends BaseServiceV2<
     }
 
     // flush the left calldata
-    if (0 < calldatas.length)  await this.multicall(calldatas);
+    if (0 < calldatas.length) await this.multicall(calldatas)
   }
 
-  protected async multicall(calldatas: CallWithHeight[]): Promise<CallWithHeight[]> {
+  protected async multicall(
+    calldatas: CallWithHeight[]
+  ): Promise<CallWithHeight[]> {
     const requireSuccess = true
-    let estimatedGas: BigNumber;
+    let estimatedGas: BigNumber
     try {
-      estimatedGas = await this.state.multicall2Contract.estimateGas.tryAggregate(
-        requireSuccess,
-        convertToCalls(calldatas),
-      )
+      estimatedGas =
+        await this.state.multicall2Contract.estimateGas.tryAggregate(
+          requireSuccess,
+          convertToCalls(calldatas)
+        )
     } catch (err) {
       // when the gas is higher than the block gas limit
       if (err.message.includes('gas required exceeds allowance')) {
         // ecursively call excluding the last element
-        const remainingCalls = await this.multicall(calldatas.slice(0, -1));
-        return [calldatas[calldatas.length-1], ...remainingCalls]
+        const remainingCalls = await this.multicall(calldatas.slice(0, -1))
+        return [calldatas[calldatas.length - 1], ...remainingCalls]
       } else {
         throw err
       }
@@ -395,7 +423,7 @@ export class MessageRelayerService extends BaseServiceV2<
 
   protected updateHighestCheckedL2(calldatas: CallWithHeight[]): void {
     // assume the last element is the hightst, so doen't traverse all the element
-    const highest = calldatas[calldatas.length-1].blockHeight
+    const highest = calldatas[calldatas.length - 1].blockHeight
     // const highest = calldatas.reduce((maxCall, currentCall) => {
     //   if (!maxCall || currentCall.blockHeight > maxCall.blockHeight) {
     //     return currentCall;
@@ -406,6 +434,42 @@ export class MessageRelayerService extends BaseServiceV2<
     this.logger.info(`updated highest checked L2: ${highest}`)
   }
 
+  protected async readStateFromFile(): Promise<
+    Pick<MessageRelayerState, 'highestCheckedL2' | 'highestKnownL2'>
+  > {
+    try {
+      const data = await fs.readFile(this.options.stateFilePath, 'utf-8')
+      const json = JSON.parse(data)
+      return {
+        highestCheckedL2: json.highestCheckedL2,
+        highestKnownL2: json.highestKnownL2,
+      }
+    } catch (err) {
+      if (err.code === 'ENOENT') {
+        // return nothing, if state file not found
+        return { highestCheckedL2: 0, highestKnownL2: 0 }
+      }
+      throw new Error(
+        `failed to read state file: ${this.options.stateFilePath}, err: ${err.message}`
+      )
+    }
+  }
+
+  protected async writeStateToFile(
+    state: Pick<MessageRelayerState, 'highestCheckedL2' | 'highestKnownL2'>
+  ): Promise<void> {
+    const dir = path.dirname(this.options.stateFilePath)
+
+    try {
+      await fs.access(dir)
+    } catch (error) {
+      // create dir if not exists
+      await fs.mkdir(dir, { recursive: true })
+    }
+
+    const data = JSON.stringify(state, null, 2)
+    await fs.writeFile(this.options.stateFilePath, data, 'utf-8')
+  }
 }
 
 if (require.main === module) {
