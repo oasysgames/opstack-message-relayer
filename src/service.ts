@@ -38,7 +38,6 @@ type MessageRelayerOptions = {
   stateCommitmentChain?: string
   canonicalTransactionChain?: string
   bondManager?: string
-  maxBlockBatchSize?: number
   pollInterval?: number
   receiptTimeout?: number
   gasMultiplier?: number
@@ -48,17 +47,16 @@ type MessageRelayerOptions = {
 }
 
 type MessageRelayerMetrics = {
-  highestCheckedL2: Gauge
   highestKnownL2: Gauge
+  highestProvenL2: Gauge
+  highestFinalizedL2: Gauge
   numRelayedMessages: Counter
 }
 
 type MessageRelayerState = {
-  wallet: Signer
-  messenger: CrossChainMessenger
-  multicaller?: Multicaller
-  highestCheckedL2: number
   highestKnownL2: number
+  highestProvenL2: number
+  highestFinalizedL2: number
 }
 
 export class MessageRelayerService extends BaseServiceV2<
@@ -66,6 +64,11 @@ export class MessageRelayerService extends BaseServiceV2<
   MessageRelayerMetrics,
   MessageRelayerState
 > {
+  private initalIteration: boolean = true
+  private wallet: Signer
+  private messenger: CrossChainMessenger
+  private multicaller?: Multicaller
+
   constructor(options?: Partial<MessageRelayerOptions & StandardOptions>) {
     super({
       name: 'Message_Relayer',
@@ -126,11 +129,6 @@ export class MessageRelayerService extends BaseServiceV2<
           validator: validators.str,
           desc: 'Address of the BondManager on Layer1.',
         },
-        maxBlockBatchSize: {
-          validator: validators.num,
-          desc: 'If using multicall, max block batch size for multicall messaging relay.',
-          default: 200,
-        },
         pollInterval: {
           validator: validators.num,
           desc: 'Polling interval of StateCommitmentChain (unit: msec).',
@@ -163,13 +161,17 @@ export class MessageRelayerService extends BaseServiceV2<
         },
       },
       metricsSpec: {
-        highestCheckedL2: {
-          type: Gauge,
-          desc: 'Highest L2 tx that has been checked',
-        },
         highestKnownL2: {
           type: Gauge,
           desc: 'Highest known L2 height',
+        },
+        highestProvenL2: {
+          type: Gauge,
+          desc: 'Highest L2 tx that has been proven',
+        },
+        highestFinalizedL2: {
+          type: Gauge,
+          desc: 'Highest L2 tx that has been finalized',
         },
         numRelayedMessages: {
           type: Counter,
@@ -180,9 +182,7 @@ export class MessageRelayerService extends BaseServiceV2<
   }
 
   protected async init(): Promise<void> {
-    this.state.wallet = this.options.l1Wallet.connect(
-      this.options.l1RpcProvider
-    )
+    this.wallet = this.options.l1Wallet.connect(this.options.l1RpcProvider)
 
     const l1ContractOpts = [
       this.options.addressManager,
@@ -210,12 +210,12 @@ export class MessageRelayerService extends BaseServiceV2<
       throw new Error('L1 contract address is missing.')
     }
 
-    const l1Network = await this.state.wallet.provider.getNetwork()
+    const l1Network = await this.wallet.provider.getNetwork()
     const l1ChainId = l1Network.chainId
     const l2Network = await this.options.l2RpcProvider.getNetwork()
     const l2ChainId = l2Network.chainId
-    this.state.messenger = new CrossChainMessenger({
-      l1SignerOrProvider: this.state.wallet,
+    this.messenger = new CrossChainMessenger({
+      l1SignerOrProvider: this.wallet,
       l2SignerOrProvider: this.options.l2RpcProvider,
       l1ChainId,
       l2ChainId,
@@ -233,24 +233,24 @@ export class MessageRelayerService extends BaseServiceV2<
       bedrock: true,
     })
 
-    this.state.multicaller = new Multicaller(
+    this.multicaller = new Multicaller(
       this.options.multicall,
-      this.state.wallet,
+      this.wallet,
       this.options.multicallTargetGas,
       this.options.gasMultiplier
     )
 
-    const lastState = await this.readStateFromFile()
-    this.state.highestCheckedL2 =
-      this.options.fromL2TransactionIndex || lastState.highestCheckedL2
-    this.state.highestKnownL2 =
-      await this.state.messenger.l2Provider.getBlockNumber()
+    this.state = await this.readStateFromFile()
+    if (this.state.highestProvenL2 < this.options.fromL2TransactionIndex) {
+      this.state.highestProvenL2 = this.options.fromL2TransactionIndex
+      this.state.highestFinalizedL2 = this.options.fromL2TransactionIndex
+    }
   }
 
   async routes(router: ExpressRouter): Promise<void> {
     router.get('/status', async (req: any, res: any) => {
       return res.status(200).json({
-        highestCheckedL2: this.state.highestCheckedL2,
+        highestProvenL2: this.state.highestProvenL2,
         highestKnownL2: this.state.highestKnownL2,
       })
     })
@@ -267,39 +267,38 @@ export class MessageRelayerService extends BaseServiceV2<
   }
 
   protected async handleMultipleBlock(): Promise<void> {
-    // Update metrics
-    this.metrics.highestCheckedL2.set(this.state.highestCheckedL2)
+    const latest = await this.messenger.l2Provider.getBlockNumber()
+
+    if (latest === this.state.highestKnownL2) {
+      return
+    } else if (latest < this.state.highestKnownL2) {
+      // Reorg detected
+    }
+
+    // update latest known L2 height
+    this.state.highestKnownL2 = latest
     this.metrics.highestKnownL2.set(this.state.highestKnownL2)
-    this.logger.debug(`highestCheckedL2: ${this.state.highestCheckedL2}`)
     this.logger.debug(`highestKnownL2: ${this.state.highestKnownL2}`)
 
-    // If we're already at the tip, then update the latest tip and loop again.
-    if (this.state.highestCheckedL2 > this.state.highestKnownL2) {
-      this.state.highestKnownL2 =
-        await this.state.messenger.l2Provider.getBlockNumber()
-
-      // Sleeping for 1000ms is good enough since this is meant for development and not for live
-      // networks where we might want to restrict the number of requests per second.
-      await sleep(1000)
-      this.logger.debug(`highestCheckedL2 > this.state.highestKnownL2`)
-      return
-    }
-
     let calldatas: CallWithHeight[] = []
-    const target = this.state.messenger.contracts.l1.OptimismPortal.target
-    const callback = (hash: string, calls: CallWithHeight[]) => {
+    const target = this.messenger.contracts.l1.OptimismPortal.target
+    const updateHeightCallback = (hash: string, calls: CallWithHeight[]) => {
       this.logger.info(`relayer sent multicall: ${hash}`)
-      this.updateHighestCheckedL2(calls)
-      this.metrics.numRelayedMessages.inc(calls.length)
+      if (this.updateHighestCheckedL2(calls)) {
+        this.metrics.numRelayedMessages.inc(calls.length)
+      }
+    }
+    // iterate block from the highest finalized at the start of the service
+    const initalHeight = (): number => {
+      if (this.initalIteration) {
+        this.initalIteration = false
+        return this.state.highestFinalizedL2
+      }
+      return this.state.highestProvenL2
     }
 
-    for (
-      let i = this.state.highestCheckedL2;
-      i < this.state.highestCheckedL2 + this.options.maxBlockBatchSize;
-      i++
-    ) {
-      const block =
-        await this.state.messenger.l2Provider.getBlockWithTransactions(i)
+    for (let h = initalHeight(); h < this.state.highestKnownL2; h++) {
+      const block = await this.messenger.l2Provider.getBlockWithTransactions(h)
       if (block === null) {
         break
       }
@@ -311,7 +310,8 @@ export class MessageRelayerService extends BaseServiceV2<
 
       for (let j = 0; j < block.transactions.length; j++) {
         const txHash = block.transactions[j].hash
-        const status = await this.state.messenger.getMessageStatus(txHash)
+        const message = await this.messenger.toCrossChainMessage(txHash)
+        const status = await this.messenger.getMessageStatus(message)
         this.logger.debug(
           `txHash: ${txHash}, status: ${MessageStatus[status]})`
         )
@@ -321,62 +321,69 @@ export class MessageRelayerService extends BaseServiceV2<
         }
 
         // Estimate gas cost for proveMessage
-        if (this.state.multicaller?.singleCallGas === 0) {
+        if (this.multicaller?.singleCallGas === 0) {
           const estimatedGas = (
-            await this.state.messenger.estimateGas.proveMessage(txHash)
+            await this.messenger.estimateGas.proveMessage(txHash)
           ).toNumber()
-          this.state.multicaller.singleCallGas = estimatedGas
+          this.multicaller.singleCallGas = estimatedGas
         }
 
         // Populate calldata, the append to the list
         const callData = (
-          await this.state.messenger.populateTransaction.proveMessage(txHash)
+          await this.messenger.populateTransaction.proveMessage(txHash)
         ).data
         calldatas.push({ target, callData, blockHeight: block.number })
 
         // go next when lower than multicall target gas
-        if (!this.state.multicaller?.isOvertargetGas(calldatas.length)) {
+        if (!this.multicaller?.isOvertargetGas(calldatas.length)) {
           continue
         }
 
         // send multicall, then update the checked L2 height
         // return the remaining callcatas, those are failed due to gas limit
-        calldatas = await this.state.multicaller?.multicall(calldatas, callback)
+        calldatas = await this.multicaller?.multicall(
+          calldatas,
+          updateHeightCallback
+        )
       }
     }
 
     // flush the left calldata
     if (0 < calldatas.length)
-      await this.state.multicaller?.multicall(calldatas, callback)
+      await this.multicaller?.multicall(calldatas, updateHeightCallback)
   }
 
-  protected updateHighestCheckedL2(calldatas: CallWithHeight[]): void {
+  protected updateHighestCheckedL2(calldatas: CallWithHeight[]): boolean {
     // assume the last element is the hightst, so doen't traverse all the element
-    const highest = calldatas[calldatas.length - 1].blockHeight
+    let highest = calldatas[calldatas.length - 1].blockHeight
     // const highest = calldatas.reduce((maxCall, currentCall) => {
     //   if (!maxCall || currentCall.blockHeight > maxCall.blockHeight) {
     //     return currentCall;
     //   }
     //   return maxCall;
     // }).blockHeight
-    this.state.highestCheckedL2 = highest
-    this.logger.info(`updated highest checked L2: ${highest}`)
+    if (0 < highest) highest -= 1 // subtract `1` to assure the all transaction in block is finalized
+    if (highest <= this.state.highestProvenL2) return false
+
+    this.state.highestProvenL2 = highest
+    this.metrics.highestProvenL2.set(this.state.highestProvenL2)
+    this.logger.debug(`highestProvenL2: ${this.state.highestProvenL2}`)
+    return true
   }
 
-  protected async readStateFromFile(): Promise<
-    Pick<MessageRelayerState, 'highestCheckedL2' | 'highestKnownL2'>
-  > {
+  protected async readStateFromFile(): Promise<MessageRelayerState> {
     try {
       const data = await fs.readFile(this.options.stateFilePath, 'utf-8')
       const json = JSON.parse(data)
       return {
-        highestCheckedL2: json.highestCheckedL2,
         highestKnownL2: json.highestKnownL2,
+        highestProvenL2: json.highestProvenL2,
+        highestFinalizedL2: json.highestFinalizedL2,
       }
     } catch (err) {
       if (err.code === 'ENOENT') {
         // return nothing, if state file not found
-        return { highestCheckedL2: 0, highestKnownL2: 0 }
+        return { highestKnownL2: 0, highestProvenL2: 0, highestFinalizedL2: 0 }
       }
       throw new Error(
         `failed to read state file: ${this.options.stateFilePath}, err: ${err.message}`
@@ -384,9 +391,7 @@ export class MessageRelayerService extends BaseServiceV2<
     }
   }
 
-  protected async writeStateToFile(
-    state: Pick<MessageRelayerState, 'highestCheckedL2' | 'highestKnownL2'>
-  ): Promise<void> {
+  protected async writeStateToFile(state: MessageRelayerState): Promise<void> {
     const dir = path.dirname(this.options.stateFilePath)
 
     try {
