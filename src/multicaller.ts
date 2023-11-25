@@ -2,6 +2,7 @@ import { BytesLike } from '@ethersproject/bytes'
 import { BigNumber, Contract, Signer } from 'ethers'
 import { CrossChainMessage } from '@eth-optimism/sdk'
 import Multicall2 from './contracts/Multicall2.json'
+import { splitArray } from './utils'
 
 export type Call = {
   target: string
@@ -12,6 +13,7 @@ export type CallWithMeta = Call & {
   blockHeight: number
   txHash: string
   message: CrossChainMessage
+  err: Error
 }
 
 export class Multicaller {
@@ -38,7 +40,7 @@ export class Multicaller {
 
   public async multicall(
     calls: CallWithMeta[],
-    callback: (hash: string, CallWithMeta: CallWithMeta[]) => void
+    callback: any
   ): Promise<CallWithMeta[]> {
     const requireSuccess = true
     let estimatedGas: BigNumber
@@ -48,20 +50,24 @@ export class Multicaller {
         this.convertToCalls(calls)
       )
     } catch (err) {
-      // when the gas is higher than the block gas limit
+      // gas is higher than the block gas limit
       if (err.message.includes('gas required exceeds allowance')) {
-        // reset the gasProveMessage, gas estimation is not accurate
+        // reset single call gas, gas estimation is not accurate
         this.singleCallGas = 0
-        // ecursively call excluding the last element
-        const remainingCalls = await this.multicall(
-          calls.slice(0, -1),
-          callback
-        )
-        return [calls[calls.length - 1], ...remainingCalls]
-      } else {
-        throw err
       }
+
+      // failed even single call, return as list of failed calls
+      if (calls.length === 1) {
+        calls[0].err = err
+        return calls
+      }
+
+      // split the array in half and recursively call
+      const [firstHalf, secondHalf] = splitArray(calls)
+      const results = await this.multicall(firstHalf, callback)
+      return [...results, ...(await this.multicall(secondHalf, callback))]
     }
+
     const overrideOptions = {
       targetGas: ~~(estimatedGas.toNumber() * (this.gasMultiplier || 1.0)),
     }

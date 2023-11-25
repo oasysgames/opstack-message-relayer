@@ -32,11 +32,6 @@ export default class Finalizer {
       let calldatas: CallWithMeta[] = []
       const target = this.messenger.contracts.l1.OptimismPortal.target
 
-      const updateHeightCallback = (hash: string, calls: CallWithMeta[]) => {
-        this.logger.info(`[finalizer] relayer sent multicall: ${hash}`)
-        this.updateHighest(calls)
-      }
-
       while (this.queue.getSize() !== 0) {
         const head = this.queue.head()
         const txHash = head.txHash
@@ -69,6 +64,7 @@ export default class Finalizer {
           blockHeight: head.blockHeight,
           txHash,
           message: head.message,
+          err: null,
         })
 
         // evict the head from queue
@@ -80,17 +76,36 @@ export default class Finalizer {
         }
 
         // send multicall
-        // return the remaining callcatas, those are failed due to gas limit
-        calldatas = await this.multicaller?.multicall(
+        this.handleMulticallResult(
           calldatas,
-          updateHeightCallback
+          await this.multicaller?.multicall(calldatas, null)
         )
       }
 
       // flush the left calldata
       if (0 < calldatas.length)
-        await this.multicaller?.multicall(calldatas, updateHeightCallback)
+        this.handleMulticallResult(
+          calldatas,
+          await this.multicaller?.multicall(calldatas, null)
+        )
     }, this.pollingInterval)
+  }
+
+  protected handleMulticallResult(
+    calleds: CallWithMeta[],
+    faileds: CallWithMeta[]
+  ): void {
+    const failedIds = new Set(faileds.map((failed) => failed.txHash))
+    const succeeds = calleds.filter((call) => !failedIds.has(call.txHash))
+
+    this.updateHighest(succeeds)
+
+    // record log the failed list with each error message
+    for (const fail of faileds) {
+      this.logger.warn(
+        `[finalizer] failed to prove: ${fail.txHash}, err: ${fail.err.message}`
+      )
+    }
   }
 
   public stop(): void {

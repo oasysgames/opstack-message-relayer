@@ -206,22 +206,6 @@ export class MessageRelayerService extends BaseServiceV2<
 
     let calldatas: CallWithMeta[] = []
     const target = this.messenger.contracts.l1.OptimismPortal.target
-    const updateHeightCallback = (hash: string, calls: CallWithMeta[]) => {
-      // update the highest checked L2 height
-      this.logger.info(`relayer sent multicall: ${hash}`)
-      if (this.updateHighestCheckedL2(calls)) {
-        this.metrics.numRelayedMessages.inc(calls.length)
-      }
-      // send the proven messages to the finalizer
-      const messages: L2toL1Message[] = calls.map((call) => {
-        return {
-          message: call.message,
-          txHash: call.txHash,
-          blockHeight: call.blockHeight,
-        }
-      })
-      this.finalizeWorker?.postMessage(messages)
-    }
 
     for (let h = this.startScanHeight(); h < this.endScanHeight(); h++) {
       const block = await this.messenger.l2Provider.getBlockWithTransactions(h)
@@ -264,6 +248,7 @@ export class MessageRelayerService extends BaseServiceV2<
           blockHeight: block.number,
           txHash,
           message,
+          err: null,
         })
 
         // go next when lower than multicall target gas
@@ -271,18 +256,52 @@ export class MessageRelayerService extends BaseServiceV2<
           continue
         }
 
-        // send multicall, then update the checked L2 height
-        // return the remaining callcatas, those are failed due to gas limit
-        calldatas = await this.multicaller?.multicall(
+        // send multicall
+        // - update the checked L2 height with succeeded calls
+        // - post the proven messages to the finalizer
+        // - log the failed list with each error message
+        this.handleMulticallResult(
           calldatas,
-          updateHeightCallback
+          await this.multicaller?.multicall(calldatas, null)
         )
       }
     }
 
     // flush the left calldata
     if (0 < calldatas.length)
-      await this.multicaller?.multicall(calldatas, updateHeightCallback)
+      this.handleMulticallResult(
+        calldatas,
+        await this.multicaller?.multicall(calldatas, null)
+      )
+  }
+
+  protected handleMulticallResult(
+    calleds: CallWithMeta[],
+    faileds: CallWithMeta[]
+  ): void {
+    const failedIds = new Set(faileds.map((failed) => failed.txHash))
+    const succeeds = calleds.filter((call) => !failedIds.has(call.txHash))
+
+    // update the highest checked L2 height
+    if (this.updateHighestCheckedL2(succeeds)) {
+      this.metrics.numRelayedMessages.inc(succeeds.length)
+    }
+    // send the proven messages to the finalizer
+    const messages: L2toL1Message[] = succeeds.map((call) => {
+      return {
+        message: call.message,
+        txHash: call.txHash,
+        blockHeight: call.blockHeight,
+      }
+    })
+    this.finalizeWorker?.postMessage(messages)
+
+    // record log the failed list with each error message
+    for (const fail of faileds) {
+      this.logger.warn(
+        `failed to prove: ${fail.txHash}, err: ${fail.err.message}`
+      )
+    }
   }
 
   protected startScanHeight(): number {
@@ -299,14 +318,12 @@ export class MessageRelayerService extends BaseServiceV2<
   }
 
   protected updateHighestCheckedL2(calldatas: CallWithMeta[]): boolean {
-    // assume the last element is the hightst, so doen't traverse all the element
-    let highest = calldatas[calldatas.length - 1].blockHeight
-    // const highest = calldatas.reduce((maxCall, currentCall) => {
-    //   if (!maxCall || currentCall.blockHeight > maxCall.blockHeight) {
-    //     return currentCall;
-    //   }
-    //   return maxCall;
-    // }).blockHeight
+    let highest = calldatas.reduce((maxCall, currentCall) => {
+      if (!maxCall || currentCall.blockHeight > maxCall.blockHeight) {
+        return currentCall
+      }
+      return maxCall
+    }).blockHeight
     if (0 < highest) highest -= 1 // subtract `1` to assure the all transaction in block is finalized
     if (highest <= this.state.highestProvenL2) return false
     this.updateHighestProvenL2(highest)

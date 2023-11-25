@@ -30,3 +30,10 @@ export async function writeToFile<T>(
   const data = JSON.stringify(state, null, 2)
   await fs.writeFile(filepath, data, 'utf-8')
 }
+
+export function splitArray<T>(array: T[]): [T[], T[]] {
+  const middle = Math.ceil(array.length / 2)
+  const firstHalf = array.slice(0, middle)
+  const secondHalf = array.slice(middle)
+  return [firstHalf, secondHalf]
+}
