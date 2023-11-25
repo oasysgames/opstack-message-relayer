@@ -1,23 +1,12 @@
-import { parentPort, workerData } from 'worker_threads'
 import { Logger } from '@eth-optimism/common-ts'
 import { CrossChainMessenger, MessageStatus } from '@eth-optimism/sdk'
 import Queue from './queue'
-import { Multicaller, CallWithHeight } from './multicaller'
+import { Multicaller, CallWithMeta } from './multicaller'
+import { L2toL1Message } from './finalize_worker'
 
-export type L2toL1Message = {
-  message: string
-  txHash: string
-  blockHeight: number
-}
-
-export type FinalizerMessage = {
-  highestFinalizedL2: number
-}
-
-export class Finalizer {
+export default class Finalizer {
   public highestFinalizedL2: number
 
-  private port: any
   private queue: Queue<L2toL1Message>
   private logger: Logger
   private messenger: CrossChainMessenger
@@ -26,13 +15,11 @@ export class Finalizer {
   private interval: NodeJS.Timeout | undefined
 
   constructor(
-    port: any,
     logger: Logger,
     pollingInterval: number,
     messenger: CrossChainMessenger,
     multicaller: Multicaller
   ) {
-    this.port = port
     this.queue = new Queue<L2toL1Message>(1024)
     this.logger = logger
     this.pollingInterval = pollingInterval
@@ -42,16 +29,12 @@ export class Finalizer {
 
   public async start(): Promise<void> {
     this.interval = setInterval(async () => {
-      let calldatas: CallWithHeight[] = []
+      let calldatas: CallWithMeta[] = []
       const target = this.messenger.contracts.l1.OptimismPortal.target
 
-      const updateHeightCallback = (hash: string, calls: CallWithHeight[]) => {
+      const updateHeightCallback = (hash: string, calls: CallWithMeta[]) => {
         this.logger.info(`[finalizer] relayer sent multicall: ${hash}`)
-        if (this.updateHighest(calls)) {
-          this.port.postMessage({
-            highestFinalizedL2: this.highestFinalizedL2,
-          } as FinalizerMessage)
-        }
+        this.updateHighest(calls)
       }
 
       while (this.queue.getSize() !== 0) {
@@ -80,7 +63,13 @@ export class Finalizer {
         const callData = (
           await this.messenger.populateTransaction.finalizeMessage(txHash)
         ).data
-        calldatas.push({ target, callData, blockHeight: head.blockHeight })
+        calldatas.push({
+          target,
+          callData,
+          blockHeight: head.blockHeight,
+          txHash,
+          message: head.message,
+        })
 
         // evict the head from queue
         this.queue.shift()
@@ -110,12 +99,14 @@ export class Finalizer {
     this.logger.debug(`[finalizer] stopped`)
   }
 
-  public appendMessage(message: L2toL1Message): void {
-    this.queue.push(message)
-    this.logger.debug(`[finalizer] received txhash: ${message.txHash}`)
+  public appendMessage(...messages: L2toL1Message[]): void {
+    this.queue.push(...messages)
+    this.logger.debug(
+      `[finalizer] received txhashes: ${messages.map((m) => m.txHash)}`
+    )
   }
 
-  protected updateHighest(calldatas: CallWithHeight[]): boolean {
+  protected updateHighest(calldatas: CallWithMeta[]): boolean {
     // assume the last element is the hightst, so doen't traverse all the element
     let highest = calldatas[calldatas.length - 1].blockHeight
     if (0 < highest) highest -= 1 // subtract `1` to assure the all transaction in block is finalized
@@ -126,33 +117,3 @@ export class Finalizer {
     return true
   }
 }
-
-interface InitData {
-  logger: Logger
-  pollingInterval: number
-  messenger: CrossChainMessenger
-  multicaller: Multicaller
-}
-
-const { logger, pollingInterval, messenger, multicaller } =
-  workerData as InitData
-const finalizer = new Finalizer(
-  parentPort,
-  logger,
-  pollingInterval,
-  messenger,
-  multicaller
-)
-
-// Start finalizer
-finalizer.start()
-
-// Receive the proven txhash
-parentPort?.on('message', (message: L2toL1Message) => {
-  finalizer.appendMessage(message)
-})
-
-// Stop finalizer
-parentPort.on('close', () => {
-  finalizer.stop()
-})

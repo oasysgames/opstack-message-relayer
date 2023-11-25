@@ -1,5 +1,6 @@
 import { BytesLike } from '@ethersproject/bytes'
 import { BigNumber, Contract, Signer } from 'ethers'
+import { CrossChainMessage } from '@eth-optimism/sdk'
 import Multicall2 from './contracts/Multicall2.json'
 
 export type Call = {
@@ -7,8 +8,10 @@ export type Call = {
   callData: BytesLike
 }
 
-export type CallWithHeight = Call & {
+export type CallWithMeta = Call & {
   blockHeight: number
+  txHash: string
+  message: CrossChainMessage
 }
 
 export class Multicaller {
@@ -34,9 +37,9 @@ export class Multicaller {
   }
 
   public async multicall(
-    calls: CallWithHeight[],
-    callback: (hash: string, CallWithHeight: CallWithHeight[]) => void
-  ): Promise<CallWithHeight[]> {
+    calls: CallWithMeta[],
+    callback: (hash: string, CallWithMeta: CallWithMeta[]) => void
+  ): Promise<CallWithMeta[]> {
     const requireSuccess = true
     let estimatedGas: BigNumber
     try {
@@ -80,7 +83,7 @@ export class Multicaller {
     return this.singleCallGas * size * this.gasMultiplier
   }
 
-  private convertToCalls(calls: CallWithHeight[]): Call[] {
+  private convertToCalls(calls: CallWithMeta[]): Call[] {
     return calls.map(({ blockHeight, ...callProps }) => callProps)
   }
 }
