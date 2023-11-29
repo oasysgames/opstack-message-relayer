@@ -18,10 +18,10 @@ export type CallWithMeta = Call & {
 
 export class Multicaller {
   public singleCallGas: number
+  public gasMultiplier: number
 
   private readonly contract: Contract
-  private readonly targetGas: number
-  private readonly gasMultiplier: number
+  private targetGas: number
 
   constructor(
     multicallAddress: string,
@@ -40,7 +40,7 @@ export class Multicaller {
 
   public async multicall(
     calls: CallWithMeta[],
-    callback: any
+    callback: (hash: string, calls: CallWithHeight[]) => void
   ): Promise<CallWithMeta[]> {
     const requireSuccess = true
     let estimatedGas: BigNumber
@@ -50,9 +50,9 @@ export class Multicaller {
         this.convertToCalls(calls)
       )
     } catch (err) {
-      // gas is higher than the block gas limit
-      if (err.message.includes('gas required exceeds allowance')) {
-        // reset single call gas, gas estimation is not accurate
+      // reset single call gas, if gas estimation is not accurate
+      const expectedGas = this.computeExpectedMulticallGas(calls.length)
+      if (expectedGas < Number(estimatedGas)) {
         this.singleCallGas = 0
       }
 
@@ -69,7 +69,7 @@ export class Multicaller {
     }
 
     const overrideOptions = {
-      targetGas: ~~(estimatedGas.toNumber() * (this.gasMultiplier || 1.0)),
+      gasLimit: ~~(estimatedGas.toNumber() * (this.gasMultiplier || 1.0)),
     }
     const tx = await this.contract.tryAggregate(
       requireSuccess,
@@ -78,7 +78,7 @@ export class Multicaller {
     )
     await tx.wait()
 
-    callback(tx.hash, calls)
+    if (callback) callback(tx.hash, calls)
 
     return []
   }
@@ -86,10 +86,12 @@ export class Multicaller {
   // Compute expected gas cost of multicall
   // from multiplying the first gas cost of proveMessage by the number of messages
   private computeExpectedMulticallGas(size: number): number {
-    return this.singleCallGas * size * this.gasMultiplier
+    return Math.floor(this.singleCallGas * size * this.gasMultiplier)
   }
 
   private convertToCalls(calls: CallWithMeta[]): Call[] {
-    return calls.map(({ blockHeight, ...callProps }) => callProps)
+    return calls.map(
+      ({ blockHeight, txHash, message, err, ...callProps }) => callProps
+    )
   }
 }

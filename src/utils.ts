@@ -1,6 +1,8 @@
 import { promises as fs } from 'fs'
 import * as path from 'path'
 
+export const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
+
 export async function readFromFile<T>(filepath: string): Promise<T> {
   try {
     const data = await fs.readFile(filepath, 'utf-8')

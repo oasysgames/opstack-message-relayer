@@ -21,10 +21,4 @@
     "node_modules",
     "dist"
   ],
-  "include": [
-    "src/**/*.ts",
-    "src/**/*.json",
-    "package.json",
-  ]
 }
-
