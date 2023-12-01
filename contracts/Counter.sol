@@ -14,7 +14,7 @@ contract Counter {
         return count;
     }
 
-    // Function to increment count by 1
+    // Function to increment count by 1, and waste gas
     function inc() public {
         count += 1;
 
@@ -24,6 +24,11 @@ contract Counter {
             seed = keccak256(abi.encode(seed));
             trash[seed] = get();
         }
+    }
+
+    // Function to just simply increment count by 1
+    function incSimple() public {
+        count += 1;
     }
 
     // Function to decrement count by 1

@@ -9,7 +9,6 @@ describe('Multicaller', function () {
     const counter = await (
       await ethers.getContractFactory('Counter')
     ).deploy(0)
-    console.log()
     // deploy multicalll2 contract
     const muticall = await (
       await ethers.getContractFactory('Multicall2')

@@ -5,14 +5,14 @@ import { Multicaller, CallWithMeta } from './multicaller'
 import { L2toL1Message } from './finalize_worker'
 
 export default class Finalizer {
-  public highestFinalizedL2: number
+  public highestFinalizedL2: number = 0
+  public interval: NodeJS.Timeout | undefined
+  public queue: FixedSizeQueue<L2toL1Message>
 
-  private queue: FixedSizeQueue<L2toL1Message>
   private logger: Logger
   private messenger: CrossChainMessenger
-  private multicaller: Multicaller
+  public multicaller: Multicaller
   private pollingInterval: number
-  private interval: NodeJS.Timeout | undefined
 
   constructor(
     queueSize: number,
@@ -33,6 +33,7 @@ export default class Finalizer {
       let calldatas: CallWithMeta[] = []
       const target = this.messenger.contracts.l1.OptimismPortal.target
 
+      // traverse the queue
       while (this.queue.count !== 0) {
         const head = this.queue.peek()
         const txHash = head.txHash
@@ -45,6 +46,15 @@ export default class Finalizer {
             `[finalizer] message ${head.message} is still in challenge period, txhash: ${txHash}, blockHeight: ${head.blockHeight}`
           )
           break
+        }
+
+        // already finalized
+        if (MessageStatus.READY_FOR_RELAY < status) {
+          this.queue.dequeue() // evict the head from queue
+          this.logger.debug(
+            `[finalizer] message ${head.message} is already relayed, txhash: ${txHash}, blockHeight: ${head.blockHeight}`
+          )
+          continue
         }
 
         // Estimate gas cost for proveMessage
@@ -68,27 +78,22 @@ export default class Finalizer {
           err: null,
         })
 
-        // evict the head from queue
-        this.queue.dequeue()
+        this.queue.dequeue() // evict the head from queue
 
         // go next when lower than multicall target gas
         if (!this.multicaller?.isOvertargetGas(calldatas.length)) {
           continue
         }
 
-        // send multicall
+        // multicall, and handle the result
         this.handleMulticallResult(
           calldatas,
           await this.multicaller?.multicall(calldatas, null)
         )
-      }
 
-      // flush the left calldata
-      if (0 < calldatas.length)
-        this.handleMulticallResult(
-          calldatas,
-          await this.multicaller?.multicall(calldatas, null)
-        )
+        // reset calldata list
+        calldatas = []
+      }
     }, this.pollingInterval)
   }
 
@@ -101,7 +106,7 @@ export default class Finalizer {
 
     this.updateHighest(succeeds)
 
-    // record log the failed list with each error message
+    // log the failed list with each error message
     for (const fail of faileds) {
       this.logger.warn(
         `[finalizer] failed to prove: ${fail.txHash}, err: ${fail.err.message}`

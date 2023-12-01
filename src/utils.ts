@@ -39,3 +39,7 @@ export function splitArray<T>(array: T[]): [T[], T[]] {
   const secondHalf = array.slice(middle)
   return [firstHalf, secondHalf]
 }
+
+export function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}

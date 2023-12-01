@@ -53,6 +53,15 @@ describe('FixedSizeQueue', function () {
       } catch (e) {
         expect(e.message).to.eq('Queue is empty')
       }
+
+      // enqueue again
+      queue.enqueue(11, 12, 13)
+      expect(queue.count).to.equal(3)
+
+      // dequeue again
+      expect(queue.dequeue()).to.equal(11)
+      expect(queue.count).to.equal(2)
+      expect(queue.peek()).to.equal(12)
     })
   })
 })

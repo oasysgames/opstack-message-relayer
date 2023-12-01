@@ -17,7 +17,7 @@ export type CallWithMeta = Call & {
 }
 
 export class Multicaller {
-  public singleCallGas: number
+  public singleCallGas: number = 0
   public gasMultiplier: number
 
   private readonly contract: Contract
