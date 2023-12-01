@@ -25,6 +25,7 @@ export type MessageRelayerOptions = {
   stateFilePath?: string
   l2blockConfirmations?: number
   reorgSafetyDepth?: number
+  queueSize?: number
 }
 
 export const serviceName = 'Message_Relayer'
@@ -123,6 +124,11 @@ export const serviceOptionsSpec: any = {
     validator: validators.num,
     desc: 'Number of blocks addionally rolled back from detected heiht to ensure safety',
     default: 4,
+  },
+  queueSize: {
+    validator: validators.num,
+    desc: 'Number of messages to queue before rejecting new messages',
+    default: 4096,
   },
 }
 

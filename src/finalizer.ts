@@ -1,13 +1,13 @@
 import { Logger } from '@eth-optimism/common-ts'
 import { CrossChainMessenger, MessageStatus } from '@eth-optimism/sdk'
-import Queue from './queue'
+import FixedSizeQueue from './queue'
 import { Multicaller, CallWithMeta } from './multicaller'
 import { L2toL1Message } from './finalize_worker'
 
 export default class Finalizer {
   public highestFinalizedL2: number
 
-  private queue: Queue<L2toL1Message>
+  private queue: FixedSizeQueue<L2toL1Message>
   private logger: Logger
   private messenger: CrossChainMessenger
   private multicaller: Multicaller
@@ -15,12 +15,13 @@ export default class Finalizer {
   private interval: NodeJS.Timeout | undefined
 
   constructor(
+    queueSize: number,
     logger: Logger,
     pollingInterval: number,
     messenger: CrossChainMessenger,
     multicaller: Multicaller
   ) {
-    this.queue = new Queue<L2toL1Message>(1024)
+    this.queue = new FixedSizeQueue<L2toL1Message>(queueSize)
     this.logger = logger
     this.pollingInterval = pollingInterval
     this.messenger = messenger
@@ -32,8 +33,8 @@ export default class Finalizer {
       let calldatas: CallWithMeta[] = []
       const target = this.messenger.contracts.l1.OptimismPortal.target
 
-      while (this.queue.getSize() !== 0) {
-        const head = this.queue.head()
+      while (this.queue.count !== 0) {
+        const head = this.queue.peek()
         const txHash = head.txHash
         const status = await this.messenger.getMessageStatus(head.message)
 
@@ -68,7 +69,7 @@ export default class Finalizer {
         })
 
         // evict the head from queue
-        this.queue.shift()
+        this.queue.dequeue()
 
         // go next when lower than multicall target gas
         if (!this.multicaller?.isOvertargetGas(calldatas.length)) {
@@ -115,7 +116,12 @@ export default class Finalizer {
   }
 
   public appendMessage(...messages: L2toL1Message[]): void {
-    this.queue.push(...messages)
+    if (this.queue.size < this.queue.count + messages.length) {
+      throw new Error(
+        `will exceed queue size, please increase queue size (current: ${this.queue.size})`
+      )
+    }
+    this.queue.enqueue(...messages)
     this.logger.debug(
       `[finalizer] received txhashes: ${messages.map((m) => m.txHash)}`
     )

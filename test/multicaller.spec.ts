@@ -2,8 +2,6 @@ import { expect } from 'chai'
 import { ethers } from 'hardhat';
 import { Multicaller, CallWithMeta}  from '../src/multicaller'
 
-
-
 describe('Multicaller', function () {
   async function setup() {
     const signers = await ethers.getSigners()

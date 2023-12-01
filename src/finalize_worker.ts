@@ -15,15 +15,22 @@ export type FinalizerMessage = {
 }
 
 interface InitData {
+  queueSize: number
   logger: Logger
   pollingInterval: number
   messenger: CrossChainMessenger
   multicaller: Multicaller
 }
 
-const { logger, pollingInterval, messenger, multicaller } =
+const { queueSize, logger, pollingInterval, messenger, multicaller } =
   workerData as InitData
-const finalizer = new Finalizer(logger, pollingInterval, messenger, multicaller)
+const finalizer = new Finalizer(
+  queueSize,
+  logger,
+  pollingInterval,
+  messenger,
+  multicaller
+)
 
 // Start finalizer
 finalizer.start()

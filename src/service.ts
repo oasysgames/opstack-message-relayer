@@ -130,6 +130,7 @@ export class MessageRelayerService extends BaseServiceV2<
 
     this.finalizeWorker = new Worker('./src/finalize_worker.ts', {
       workerData: {
+        queueSize: this.options.queueSize,
         logger: this.logger,
         pollingInterval: this.options.pollInterval,
         messenger: this.messenger,
