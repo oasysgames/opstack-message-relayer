@@ -50,7 +50,20 @@ describe('Finalizer', function () {
   describe('appendMessage', function () {
     const messages = [ { blockHeight: 1, txHash: "1", message: "1" }, { blockHeight: 2, txHash: "2", message: "2" } ]
 
-    it('succeed: no flush queue', async function () {
+    it('succeed: multicall during in loop', async function () {
+      const { counter, finalizer } = await setup()
+      // @ts-ignore
+      finalizer.appendMessage(...messages, { blockHeight: 3, txHash: "3", message: "3" })
+
+      await sleep(500)
+
+      expect(finalizer.queue.count).to.equal(0)
+      expect(finalizer.highestFinalizedL2).to.equal(2)
+      expect(await counter.get()).to.equal(3)
+      finalizer.stop()
+    })
+
+    it('succeed: flush remaining calldatas', async function () {
       const { finalizer } = await setup()
       // @ts-ignore
       finalizer.appendMessage(...messages)
@@ -58,18 +71,8 @@ describe('Finalizer', function () {
       await sleep(500)
 
       expect(finalizer.queue.count).to.equal(0)
-      expect(finalizer.highestFinalizedL2).to.equal(0)
-    })
-
-    it('succeed: flush queue', async function () {
-      const { counter, finalizer } = await setup()
-      // @ts-ignore
-      finalizer.appendMessage(...messages, { blockHeight: 3, txHash: "3", message: "3" })
-
-      await sleep(1000)
-
-      expect(finalizer.highestFinalizedL2).to.equal(2)
-      expect(await counter.get()).to.equal(3)
+      expect(finalizer.highestFinalizedL2).to.equal(1)
+      finalizer.stop()
     })
 
     it('succeed: skip already falized or in challenge period', async function () {
@@ -82,6 +85,7 @@ describe('Finalizer', function () {
       expect(finalizer.queue.count).to.equal(1)
       expect(finalizer.highestFinalizedL2).to.equal(2)
       expect(await counter.get()).to.equal(3)
+      finalizer.stop()
     })
   })
 })

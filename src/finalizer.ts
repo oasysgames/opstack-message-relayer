@@ -94,6 +94,14 @@ export default class Finalizer {
         // reset calldata list
         calldatas = []
       }
+
+      // flush the rest of calldatas
+      if (calldatas.length !== 0) {
+        this.handleMulticallResult(
+          calldatas,
+          await this.multicaller?.multicall(calldatas, null)
+        )
+      }
     }, this.pollingInterval)
   }
 
