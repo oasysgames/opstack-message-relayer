@@ -26,6 +26,7 @@ import {
   serviseMetricsSpec,
 } from './service_params'
 import { Multicaller, CallWithMeta } from './multicaller'
+import FinalizeWrorWrapper from './finalize_work_wrapper'
 import { FinalizerMessage, L2toL1Message } from './finalize_worker'
 import { readFromFile, writeToFile } from './utils'
 
@@ -51,7 +52,7 @@ export class MessageRelayerService extends BaseServiceV2<
   private wallet: Signer
   private messenger: CrossChainMessenger
   private multicaller?: Multicaller
-  private finalizeWorker?: Worker
+  private finalizeWorker?: FinalizeWrorWrapper
 
   constructor(options?: Partial<MessageRelayerOptions & StandardOptions>) {
     super({
@@ -128,19 +129,15 @@ export class MessageRelayerService extends BaseServiceV2<
       this.state.highestFinalizedL2 = this.options.fromL2TransactionIndex
     }
 
-    this.finalizeWorker = new Worker('./src/finalize_worker.ts', {
-      workerData: {
-        queueSize: this.options.queueSize,
-        logger: this.logger,
-        pollingInterval: this.options.pollInterval,
-        messenger: this.messenger,
-        multicaller: this.multicaller,
-      },
-    })
-
-    this.finalizeWorker.on('message', (message: FinalizerMessage) => {
-      this.updateHighestFinalizedL2(message.highestFinalizedL2)
-    })
+    this.finalizeWorker = new FinalizeWrorWrapper(
+      this.options.queueSize,
+      this.logger,
+      this.options.pollInterval,
+      this.messenger,
+      this.multicaller,
+      (message: FinalizerMessage) =>
+        this.updateHighestFinalizedL2(message.highestFinalizedL2)
+    )
   }
 
   async routes(router: ExpressRouter): Promise<void> {
@@ -257,7 +254,7 @@ export class MessageRelayerService extends BaseServiceV2<
           continue
         }
 
-        // send multicall
+        // multicall, then handle the result
         // - update the checked L2 height with succeeded calls
         // - post the proven messages to the finalizer
         // - log the failed list with each error message

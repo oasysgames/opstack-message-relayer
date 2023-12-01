@@ -96,12 +96,11 @@ export default class Finalizer {
       }
 
       // flush the rest of calldatas
-      if (calldatas.length !== 0) {
+      if (0 < calldatas.length)
         this.handleMulticallResult(
           calldatas,
           await this.multicaller?.multicall(calldatas, null)
         )
-      }
     }, this.pollingInterval)
   }
 
