@@ -4,7 +4,6 @@ import { Multicaller, CallWithMeta}  from '../src/multicaller'
 import Finalizer from '../src/finalizer'
 import { MockCrossChain, MockLogger } from './mocks'
 import { sleep } from '../src/utils'
-import exp from 'constants';
 
 describe('Finalizer', function () {
   async function setup() {
@@ -27,7 +26,7 @@ describe('Finalizer', function () {
     messenger.init(counter)
     const logger = new MockLogger()
     // @ts-ignore
-    const finalizer = new Finalizer(10, logger, 100, messenger, multicaller)
+    const finalizer = new Finalizer(10, 100, logger, messenger, multicaller)
     finalizer.start()
     
     return {

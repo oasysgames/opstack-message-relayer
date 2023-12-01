@@ -42,4 +42,6 @@ export class MockCrossChain {
 export class MockLogger {
   debug(msg: string) { console.log(msg) }
   info(msg: string) { console.log(msg) }
+  warn(msg: string) { console.log(msg) }
+  error(msg: string) { console.log(msg) }
 }

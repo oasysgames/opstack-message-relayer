@@ -9,21 +9,21 @@ export default class Finalizer {
   public interval: NodeJS.Timeout | undefined
   public queue: FixedSizeQueue<L2toL1Message>
 
+  private pollingInterval: number
   private logger: Logger
   private messenger: CrossChainMessenger
   public multicaller: Multicaller
-  private pollingInterval: number
 
   constructor(
     queueSize: number,
-    logger: Logger,
     pollingInterval: number,
+    logger: Logger,
     messenger: CrossChainMessenger,
     multicaller: Multicaller
   ) {
     this.queue = new FixedSizeQueue<L2toL1Message>(queueSize)
-    this.logger = logger
     this.pollingInterval = pollingInterval
+    this.logger = logger
     this.messenger = messenger
     this.multicaller = multicaller
   }

@@ -142,3 +142,7 @@ deployments
 
 # Mac
 .DS_Store
+
+# Custom
+sandbox
+.note.md

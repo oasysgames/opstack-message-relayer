@@ -15,8 +15,14 @@
     "outDir": "./dist",
     "typeRoots": [
       "node_modules/@types"
-    ]
+    ],
+    "allowJs": true,
   },
+  "include": [
+    "src/**/*",
+    "src/contracts/Multicall2.json",
+    "./package.json",
+  ],
   "exclude": [
     "node_modules",
     "dist"

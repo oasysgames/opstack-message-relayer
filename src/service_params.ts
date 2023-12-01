@@ -26,6 +26,7 @@ export type MessageRelayerOptions = {
   l2blockConfirmations?: number
   reorgSafetyDepth?: number
   queueSize?: number
+  finalizerPrivateKey: string
 }
 
 export const serviceName = 'Message_Relayer'
@@ -129,6 +130,10 @@ export const serviceOptionsSpec: any = {
     validator: validators.num,
     desc: 'Number of messages to queue before rejecting new messages',
     default: 4096,
+  },
+  finalizerPrivateKey: {
+    validator: validators.str,
+    desc: 'Private key for finalizer',
   },
 }
 

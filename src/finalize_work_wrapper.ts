@@ -1,33 +1,64 @@
 import { Worker } from 'worker_threads'
-import { Logger } from '@eth-optimism/common-ts'
-import { CrossChainMessenger } from '@eth-optimism/sdk'
+import { Logger, LogLevel } from '@eth-optimism/common-ts'
+import {
+  FinalizerMessage,
+  L2toL1Message,
+  WorkerInitData,
+} from './finalize_worker'
 import { Multicaller } from './multicaller'
-import { FinalizerMessage, L2toL1Message } from './finalize_worker'
 
 export default class FinalizeWrorWrapper {
   private worker: Worker
+  private logger: Logger
 
   constructor(
-    queueSize: number,
     logger: Logger,
+    queueSize: number,
     pollingInterval: number,
-    messenger: CrossChainMessenger,
+    logLevel: LogLevel,
+    addressManagerAddress: string,
+    l1CrossDomainMessengerAddress: string,
+    l1RpcEndpoint: string,
+    l1ChainId: number,
+    l1BlockTimeSeconds: number,
+    finalizerPrivateKey: string,
     multicaller: Multicaller,
-    messageHandler: (message: FinalizerMessage) => void
+    messageHandler: (message: FinalizerMessage) => void,
+    isTest: boolean = false
   ) {
-    this.worker = new Worker('./finalize_worker.ts', {
-      workerData: {
-        queueSize,
-        logger,
-        pollingInterval,
-        messenger,
-        multicaller,
-      },
-    })
+    this.logger = logger
+
+    const workerData: WorkerInitData = {
+      queueSize,
+      pollingInterval,
+      logLevel,
+      addressManagerAddress,
+      l1CrossDomainMessengerAddress,
+      l1RpcEndpoint,
+      l1ChainId,
+      l1BlockTimeSeconds,
+      finalizerPrivateKey,
+      multicallAddress: multicaller.contract.address,
+      multicallTargetGas: multicaller.targetGas,
+      gasMultiplier: multicaller.gasMultiplier,
+    }
+
+    this.worker = new Worker('./src/worker.js', { workerData })
+    // this.worker = new Worker('./dist/src/finalize_worker.js', { workerData })
 
     this.worker.on('message', (message: FinalizerMessage) =>
       messageHandler(message)
     )
+
+    this.worker.on('error', (error: Error) => {
+      this.logger.error('worker error', error)
+    })
+
+    this.worker.on('exit', (code: number) => {
+      if (code !== 0) {
+        this.logger.error(`worker stopped with exit code: ${code}`)
+      }
+    })
   }
 
   terminate() {

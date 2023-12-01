@@ -19,9 +19,8 @@ export type CallWithMeta = Call & {
 export class Multicaller {
   public singleCallGas: number = 0
   public gasMultiplier: number
-
-  private readonly contract: Contract
-  private targetGas: number
+  public targetGas: number
+  public contract: Contract
 
   constructor(
     multicallAddress: string,
@@ -40,7 +39,7 @@ export class Multicaller {
 
   public async multicall(
     calls: CallWithMeta[],
-    callback: (hash: string, calls: CallWithHeight[]) => void
+    callback: (hash: string, calls: CallWithMeta[]) => void
   ): Promise<CallWithMeta[]> {
     const requireSuccess = true
     let estimatedGas: BigNumber

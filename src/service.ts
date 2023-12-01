@@ -1,5 +1,5 @@
 import { Worker } from 'worker_threads'
-import { BigNumber, Contract, Signer } from 'ethers'
+import { BigNumber, Contract, Signer, providers } from 'ethers'
 import { sleep } from '@eth-optimism/core-utils'
 import {
   BaseServiceV2,
@@ -129,11 +129,20 @@ export class MessageRelayerService extends BaseServiceV2<
       this.state.highestFinalizedL2 = this.options.fromL2TransactionIndex
     }
 
+    const l1RpcEndpoint = (
+      this.options.l1RpcProvider as providers.JsonRpcProvider
+    ).connection.url
     this.finalizeWorker = new FinalizeWrorWrapper(
-      this.options.queueSize,
       this.logger,
+      this.options.queueSize,
       this.options.pollInterval,
-      this.messenger,
+      this.options.logLevel,
+      this.options.addressManager,
+      this.options.l1CrossDomainMessenger,
+      l1RpcEndpoint,
+      l1ChainId,
+      this.options.l1BlockTimeSeconds,
+      this.options.finalizerPrivateKey,
       this.multicaller,
       (message: FinalizerMessage) =>
         this.updateHighestFinalizedL2(message.highestFinalizedL2)
