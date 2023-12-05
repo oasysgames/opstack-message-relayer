@@ -1,6 +1,6 @@
 import { expect } from 'chai'
-import { ethers } from 'hardhat';
-import { Multicaller, CallWithMeta}  from '../src/multicaller'
+import { ethers } from 'hardhat'
+import { Multicaller } from '../src/multicaller'
 import Finalizer from '../src/finalizer'
 import { MockCrossChain, MockLogger } from './mocks'
 import { sleep } from '../src/utils'
@@ -9,18 +9,22 @@ describe('Finalizer', function () {
   async function setup() {
     const signers = await ethers.getSigners()
     // deploy counter contract
-    const counter = await (
-      await ethers.getContractFactory('Counter')
-    ).deploy(0)
+    const counter = await (await ethers.getContractFactory('Counter')).deploy(0)
     // deploy multicalll2 contract
     const muticall = await (
       await ethers.getContractFactory('Multicall2')
     ).deploy()
     // estimate single inc call gas
     const callData = (await counter.populateTransaction.incSimple()).data
-    const singleCallGas = Number((await counter.estimateGas.incSimple()).toString())
+    const singleCallGas = Number(
+      (await counter.estimateGas.incSimple()).toString()
+    )
     // init multicaller
-    const multicaller = new Multicaller(muticall.address, signers[0], Math.floor(singleCallGas*2.5))
+    const multicaller = new Multicaller(
+      muticall.address,
+      signers[0],
+      Math.floor(singleCallGas * 2.5)
+    )
     // init mock messenger
     const messenger = new MockCrossChain()
     messenger.init(counter)
@@ -28,7 +32,7 @@ describe('Finalizer', function () {
     // @ts-ignore
     const finalizer = new Finalizer(10, 100, logger, messenger, multicaller)
     finalizer.start()
-    
+
     return {
       signers,
       counter,
@@ -47,12 +51,19 @@ describe('Finalizer', function () {
   })
 
   describe('appendMessage', function () {
-    const messages = [ { blockHeight: 1, txHash: "1", message: "1" }, { blockHeight: 2, txHash: "2", message: "2" } ]
+    const messages = [
+      { blockHeight: 1, txHash: '1', message: '1' },
+      { blockHeight: 2, txHash: '2', message: '2' },
+    ]
 
     it('succeed: multicall during in loop', async function () {
       const { counter, finalizer } = await setup()
       // @ts-ignore
-      finalizer.appendMessage(...messages, { blockHeight: 3, txHash: "3", message: "3" })
+      finalizer.appendMessage(...messages, {
+        blockHeight: 3,
+        txHash: '3',
+        message: '3',
+      })
 
       await sleep(500)
 
@@ -77,7 +88,12 @@ describe('Finalizer', function () {
     it('succeed: skip already falized or in challenge period', async function () {
       const { counter, finalizer } = await setup()
       // @ts-ignore
-      finalizer.appendMessage(...messages, { blockHeight: 3, txHash: "3", message: "3" }, { blockHeight: 4, txHash: "4", message: "4" }, { blockHeight: 5, txHash: "5", message: "5" })
+      finalizer.appendMessage(
+        ...messages,
+        { blockHeight: 3, txHash: '3', message: '3' },
+        { blockHeight: 4, txHash: '4', message: '4' },
+        { blockHeight: 5, txHash: '5', message: '5' }
+      )
 
       await sleep(500)
 

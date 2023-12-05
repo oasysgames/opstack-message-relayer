@@ -11,19 +11,19 @@ export class MockCrossChain {
     this.contracts = {
       l1: {
         OptimismPortal: {
-          target: contract.address
-        }
-      }
+          target: contract.address,
+        },
+      },
     }
     this.estimateGas = {
       finalizeMessage: async (txhash: any): Promise<bigint> => {
         return await contract.estimateGas.incSimple()
-      }
+      },
     }
     this.populateTransaction = {
-      finalizeMessage:  async (txhash: any): Promise<any> => {
+      finalizeMessage: async (txhash: any): Promise<any> => {
         return await contract.populateTransaction.incSimple()
-      }
+      },
     }
   }
   async getMessageStatus(message: any): Promise<any> {
@@ -52,22 +52,24 @@ export class MockCrossChainForProver {
     this.contracts = {
       l1: {
         OptimismPortal: {
-          target: contract.address
-        }
-      }
+          target: contract.address,
+        },
+      },
     }
     this.estimateGas = {
       proveMessage: async (txhash: any): Promise<bigint> => {
         return await contract.estimateGas.incSimple()
-      }
+      },
     }
     this.populateTransaction = {
-      proveMessage:  async (txhash: any): Promise<any> => {
+      proveMessage: async (txhash: any): Promise<any> => {
         return await contract.populateTransaction.incSimple()
-      }
+      },
     }
   }
-  setBlocks(blocks: any) { this.blocks = blocks }
+  setBlocks(blocks: any) {
+    this.blocks = blocks
+  }
   async toCrossChainMessage(txHash: any): Promise<any> {
     return null
   }
@@ -86,44 +88,52 @@ export class MockCrossChainForProver {
     this.blockNumber = blockNumber
   }
   public l2Provider: {
-    getBlockWithTransactions: (height: number) => any,
-    getBlockNumber: () => any,
+    getBlockWithTransactions: (height: number) => any
+    getBlockNumber: () => any
   } = {
     getBlockWithTransactions: (height: number) => {
       return this.blocks[height]
     },
     getBlockNumber: () => {
       return this.blockNumber
-    }
+    },
   }
 }
 
 export class MockLogger {
-  debug(msg: string) { console.log(msg) }
-  info(msg: string) { console.log(msg) }
-  warn(msg: string) { console.log(msg) }
-  error(msg: string) { console.log(msg) }
+  debug(msg: string) {
+    console.log(msg)
+  }
+  info(msg: string) {
+    console.log(msg)
+  }
+  warn(msg: string) {
+    console.log(msg)
+  }
+  error(msg: string) {
+    console.log(msg)
+  }
 }
 
 export class MockMetrics {
   public numRelayedMessages: {
-    inc: () => void 
+    inc: () => void
   } = {
-    inc: () => {}
+    inc: () => {},
   }
   public highestKnownL2: {
     set: (val: number) => void
   } = {
-    set: (val: number) => {}
+    set: (val: number) => {},
   }
   public highestProvenL2: {
     set: (val: number) => void
   } = {
-    set: (val: number) => {}
+    set: (val: number) => {},
   }
   public highestFinalizedL2: {
     set: (val: number) => void
   } = {
-    set: (val: number) => {}
+    set: (val: number) => {},
   }
 }

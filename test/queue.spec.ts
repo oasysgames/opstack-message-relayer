@@ -1,5 +1,5 @@
 import { expect } from 'chai'
-import FixedSizeQueue  from '../src/queue'
+import FixedSizeQueue from '../src/queue'
 
 describe('FixedSizeQueue', function () {
   const limit = 10
@@ -33,8 +33,8 @@ describe('FixedSizeQueue', function () {
 
       // dequeue
       for (let i = 0; i < queue.size; i++) {
-        expect(queue.peek()).to.equal(i+1)
-        expect(queue.dequeue()).to.equal(i+1)
+        expect(queue.peek()).to.equal(i + 1)
+        expect(queue.dequeue()).to.equal(i + 1)
         expect(queue.count).to.equal(queue.size - i - 1)
       }
 

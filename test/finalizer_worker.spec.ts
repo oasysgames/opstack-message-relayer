@@ -28,7 +28,6 @@
 //       level: logLevels[1],
 //     })
 
-
 //   const valueHolder = {
 //     value: 0,
 //   }
@@ -64,7 +63,7 @@
 //       const { worker, valueHolder } = await setup()
 //       // @ts-ignore
 //       worker.postMessage(...messages)
-      
+
 //       await sleep(500)
 
 //       expect(valueHolder.value).to.equal(2)

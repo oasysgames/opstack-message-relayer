@@ -1,11 +1,11 @@
 import { expect } from 'chai'
-import { ethers } from 'hardhat';
-import { Multicaller, CallWithMeta}  from '../src/multicaller'
+import { ethers } from 'hardhat'
+import { Multicaller, CallWithMeta } from '../src/multicaller'
 import Prover from '../src/prover'
 import { MockCrossChainForProver, MockLogger, MockMetrics } from './mocks'
 import { sleep, rand, readFromFile, deleteFileIfExists } from '../src/utils'
 
-const stateFilePath = './test/state.test.json';
+const stateFilePath = './test/state.test.json'
 const l2blockConfirmations = 8
 const reorgSafetyDepth = 4
 const succeededCalldatas: CallWithMeta[] = []
@@ -14,25 +14,28 @@ describe('Prover', function () {
   afterEach(async function () {
     await deleteFileIfExists(stateFilePath)
     succeededCalldatas.length = 0
-  });
-
+  })
 
   async function setup() {
     const signers = await ethers.getSigners()
     // deploy counter contract
-    const counter = await (
-      await ethers.getContractFactory('Counter')
-    ).deploy(0)
+    const counter = await (await ethers.getContractFactory('Counter')).deploy(0)
     // deploy multicalll2 contract
     const muticall = await (
       await ethers.getContractFactory('Multicall2')
     ).deploy()
     // estimate single inc call gas
     const callData = (await counter.populateTransaction.incSimple()).data
-    const singleCallGas = Number((await counter.estimateGas.incSimple()).toString())
+    const singleCallGas = Number(
+      (await counter.estimateGas.incSimple()).toString()
+    )
     // init multicaller
-    const multicaller = new Multicaller(muticall.address, signers[0], Math.floor(singleCallGas*2.5))
-    
+    const multicaller = new Multicaller(
+      muticall.address,
+      signers[0],
+      Math.floor(singleCallGas * 2.5)
+    )
+
     const metrics = new MockMetrics()
     const messenger = new MockCrossChainForProver()
     messenger.init(counter)
@@ -41,9 +44,19 @@ describe('Prover', function () {
     const postMessage = (succeeds: CallWithMeta[]) => {
       succeededCalldatas.push(...succeeds)
     }
-    
+
     // @ts-ignore
-    const prover = new Prover(metrics, logger, stateFilePath, 0, l2blockConfirmations, reorgSafetyDepth, messenger, multicaller, postMessage)
+    const prover = new Prover(
+      metrics,
+      logger,
+      stateFilePath,
+      0,
+      l2blockConfirmations,
+      reorgSafetyDepth,
+      messenger,
+      multicaller,
+      postMessage
+    )
     await prover.init()
 
     return {
@@ -62,14 +75,14 @@ describe('Prover', function () {
       const { prover } = await setup()
       const r = rand(100)
       prover.updateHighestKnownL2(r)
-      prover.updateHighestProvenL2(r+1)
-      prover.updateHighestFinalizedL2(r+2)
+      prover.updateHighestProvenL2(r + 1)
+      prover.updateHighestFinalizedL2(r + 2)
       await prover.writeState()
 
       await prover.init()
       expect(prover.highestKnownL2()).to.equal(r)
-      expect(prover.highestProvenL2()).to.equal(r+1)
-      expect(prover.highestFinalizedL2()).to.equal(r+2)
+      expect(prover.highestProvenL2()).to.equal(r + 1)
+      expect(prover.highestFinalizedL2()).to.equal(r + 2)
     })
   })
 
@@ -81,7 +94,7 @@ describe('Prover', function () {
       prover.updateHighestProvenL2(provenL2)
       prover.handleL2Reorg(knownL2)
 
-      expect(prover.highestProvenL2()).to.equal(provenL2)     
+      expect(prover.highestProvenL2()).to.equal(provenL2)
     })
 
     it('rollback proven', async function () {
@@ -92,11 +105,11 @@ describe('Prover', function () {
       prover.updateHighestProvenL2(provenL2)
       prover.updateHighestFinalizedL2(finalizedL2)
       prover.handleL2Reorg(knownL2)
-      
+
       const newProvenL2 = provenL2 - 1
       expect(prover.highestProvenL2()).to.equal(newProvenL2)
       const newFinalizedL2 = finalizedL2 - (provenL2 - newProvenL2)
-      expect(prover.highestFinalizedL2()).to.equal(newFinalizedL2)     
+      expect(prover.highestFinalizedL2()).to.equal(newFinalizedL2)
     })
   })
 
@@ -104,42 +117,53 @@ describe('Prover', function () {
     it('succeed', async function () {
       const { counter, prover, messenger } = await setup()
       const height = 134
-      const blocks = { [height]: {
-        transactions:  [{
-          number: height,
-          hash: "0x3",
+      const blocks = {
+        [height]: {
+          transactions: [
+            {
+              number: height,
+              hash: '0x3',
+            },
+            {
+              number: height,
+              hash: '0x4',
+            },
+            {
+              number: height,
+              hash: '0x5',
+            },
+          ],
         },
-        {
-          number: height,
-          hash: "0x4",
-        },
-        {
-          number: height,
-          hash: "0x5",
-        }],
-      }}
+      }
       messenger.setBlocks(blocks)
-      const calldatas = [{
-        target: counter.address,
-        callData: (await counter.populateTransaction.incSimple()).data,
-        blockHeight: height+1,
-        txHash: "0x1",
-        message: "0x0",
-      }, {
-        target: counter.address,
-        callData: (await counter.populateTransaction.incSimple()).data,
-        blockHeight: height-1,
-        txHash: "0x2",
-        message: "0x0",
-      }]
+      const calldatas = [
+        {
+          target: counter.address,
+          callData: (await counter.populateTransaction.incSimple()).data,
+          blockHeight: height + 1,
+          txHash: '0x1',
+          message: '0x0',
+        },
+        {
+          target: counter.address,
+          callData: (await counter.populateTransaction.incSimple()).data,
+          blockHeight: height - 1,
+          txHash: '0x2',
+          message: '0x0',
+        },
+      ]
       // @ts-ignore
       const returns = await prover.handleSingleBlock(height, calldatas)
 
       expect(returns.length).to.equal(1)
-      expect(returns[0].txHash).to.equal("0x5")
-      expect(prover.highestProvenL2()).to.equal(height)    
+      expect(returns[0].txHash).to.equal('0x5')
+      expect(prover.highestProvenL2()).to.equal(height)
       expect(await counter.get()).to.equal(3)
-      expect(succeededCalldatas.map(c => c.txHash)).to.members(["0x1", "0x2", "0x4"])
+      expect(succeededCalldatas.map((c) => c.txHash)).to.members([
+        '0x1',
+        '0x2',
+        '0x4',
+      ])
     })
   })
 
@@ -156,58 +180,72 @@ describe('Prover', function () {
       const blocks = {
         [provenL2]: {
           number: provenL2,
-          transactions:  [],
+          transactions: [],
         },
-        [provenL2+1]: {
-          number: provenL2+1,
-        transactions:  [{
-          number: provenL2+1,
-          hash: "0x1",
+        [provenL2 + 1]: {
+          number: provenL2 + 1,
+          transactions: [
+            {
+              number: provenL2 + 1,
+              hash: '0x1',
+            },
+            {
+              number: provenL2 + 1,
+              hash: '0x2',
+            },
+          ],
         },
-        {
-          number: provenL2+1,
-          hash: "0x2",
-        }],
-      },
-      [provenL2+2]: {
-        number: provenL2+2,
-        transactions:  [{
-          number: provenL2+2,
-          hash: "0x3",
-        },{
-          number: provenL2+2,
-          hash: "0x4",
-        },{
-          number: provenL2+2,
-          hash: "0x5",
-        }],
-      },
-      [provenL2+3]: {
-        number: provenL2+3,
-        transactions:  [{
-          number: provenL2+3,
-          hash: "0x6",
-        }],
-      }}
+        [provenL2 + 2]: {
+          number: provenL2 + 2,
+          transactions: [
+            {
+              number: provenL2 + 2,
+              hash: '0x3',
+            },
+            {
+              number: provenL2 + 2,
+              hash: '0x4',
+            },
+            {
+              number: provenL2 + 2,
+              hash: '0x5',
+            },
+          ],
+        },
+        [provenL2 + 3]: {
+          number: provenL2 + 3,
+          transactions: [
+            {
+              number: provenL2 + 3,
+              hash: '0x6',
+            },
+          ],
+        },
+      }
       messenger.setBlocks(blocks)
-      messenger.setBlockNumber(highestKnown+2)
+      messenger.setBlockNumber(highestKnown + 2)
       // @ts-ignore
       await prover.handleMultipleBlock()
 
-      expect(prover.highestKnownL2()).to.equal(highestKnown+2)
-      expect(prover.highestProvenL2()).to.equal(provenL2+1)
+      expect(prover.highestKnownL2()).to.equal(highestKnown + 2)
+      expect(prover.highestProvenL2()).to.equal(provenL2 + 1)
       expect(prover.highestFinalizedL2()).to.equal(finalizedL2)
       expect(await counter.get()).to.equal(4)
-      expect(succeededCalldatas.map(c => c.txHash)).to.members(["0x2", "0x3", "0x4", "0x5"])
-      expect(prover.startScanHeight()).to.equal(provenL2+2)
-      expect(prover.endScanHeight()).to.equal(provenL2+2)
+      expect(succeededCalldatas.map((c) => c.txHash)).to.members([
+        '0x2',
+        '0x3',
+        '0x4',
+        '0x5',
+      ])
+      expect(prover.startScanHeight()).to.equal(provenL2 + 2)
+      expect(prover.endScanHeight()).to.equal(provenL2 + 2)
 
-      messenger.setBlockNumber(highestKnown+3)
+      messenger.setBlockNumber(highestKnown + 3)
 
       // @ts-ignore
       await prover.handleMultipleBlock()
-      expect(prover.highestKnownL2()).to.equal(highestKnown+3)
-      expect(prover.highestProvenL2()).to.equal(provenL2+1)
+      expect(prover.highestKnownL2()).to.equal(highestKnown + 3)
+      expect(prover.highestProvenL2()).to.equal(provenL2 + 1)
       expect(prover.highestFinalizedL2()).to.equal(finalizedL2)
     })
   })

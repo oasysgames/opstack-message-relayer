@@ -1,14 +1,12 @@
 import { expect } from 'chai'
-import { ethers } from 'hardhat';
-import { Multicaller, CallWithMeta}  from '../src/multicaller'
+import { ethers } from 'hardhat'
+import { Multicaller, CallWithMeta } from '../src/multicaller'
 
 describe('Multicaller', function () {
   async function setup() {
     const signers = await ethers.getSigners()
     // deploy counter contract
-    const counter = await (
-      await ethers.getContractFactory('Counter')
-    ).deploy(0)
+    const counter = await (await ethers.getContractFactory('Counter')).deploy(0)
     // deploy multicalll2 contract
     const muticall = await (
       await ethers.getContractFactory('Multicall2')
@@ -18,7 +16,11 @@ describe('Multicaller', function () {
     const callDataFail = (await counter.populateTransaction.revertFunc()).data
     const singleCallGas = Number((await counter.estimateGas.inc()).toString())
     // init multicaller
-    const multicaller = new Multicaller(muticall.address, signers[0], Math.floor(singleCallGas*2.5))
+    const multicaller = new Multicaller(
+      muticall.address,
+      signers[0],
+      Math.floor(singleCallGas * 2.5)
+    )
     // set single gas call
     multicaller.singleCallGas = singleCallGas
     return {
