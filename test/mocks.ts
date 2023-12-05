@@ -39,9 +39,91 @@ export class MockCrossChain {
   }
 }
 
+export class MockCrossChainForProver {
+  private contract: any
+  private contracts: any
+  private estimateGas: any
+  private populateTransaction: any
+  private counter: number = 0
+  private blocks: any
+  private blockNumber: number = 0
+  init(contract: any) {
+    this.contract = contract
+    this.contracts = {
+      l1: {
+        OptimismPortal: {
+          target: contract.address
+        }
+      }
+    }
+    this.estimateGas = {
+      proveMessage: async (txhash: any): Promise<bigint> => {
+        return await contract.estimateGas.incSimple()
+      }
+    }
+    this.populateTransaction = {
+      proveMessage:  async (txhash: any): Promise<any> => {
+        return await contract.populateTransaction.incSimple()
+      }
+    }
+  }
+  setBlocks(blocks: any) { this.blocks = blocks }
+  async toCrossChainMessage(txHash: any): Promise<any> {
+    return null
+  }
+  async getMessageStatus(message: any): Promise<any> {
+    this.counter++
+
+    if (this.counter <= 1) {
+      return MessageStatus.IN_CHALLENGE_PERIOD
+    } else if (this.counter <= 5) {
+      return MessageStatus.READY_TO_PROVE
+    }
+
+    return MessageStatus.STATE_ROOT_NOT_PUBLISHED
+  }
+  setBlockNumber(blockNumber: number) {
+    this.blockNumber = blockNumber
+  }
+  public l2Provider: {
+    getBlockWithTransactions: (height: number) => any,
+    getBlockNumber: () => any,
+  } = {
+    getBlockWithTransactions: (height: number) => {
+      return this.blocks[height]
+    },
+    getBlockNumber: () => {
+      return this.blockNumber
+    }
+  }
+}
+
 export class MockLogger {
   debug(msg: string) { console.log(msg) }
   info(msg: string) { console.log(msg) }
   warn(msg: string) { console.log(msg) }
   error(msg: string) { console.log(msg) }
+}
+
+export class MockMetrics {
+  public numRelayedMessages: {
+    inc: () => void 
+  } = {
+    inc: () => {}
+  }
+  public highestKnownL2: {
+    set: (val: number) => void
+  } = {
+    set: (val: number) => {}
+  }
+  public highestProvenL2: {
+    set: (val: number) => void
+  } = {
+    set: (val: number) => {}
+  }
+  public highestFinalizedL2: {
+    set: (val: number) => void
+  } = {
+    set: (val: number) => {}
+  }
 }

@@ -143,6 +143,9 @@ deployments
 # Mac
 .DS_Store
 
+# Test
+state.test.json
+
 # Custom
 sandbox
 .note.md

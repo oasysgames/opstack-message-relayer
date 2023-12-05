@@ -1,4 +1,4 @@
-import { promises as fs } from 'fs'
+import { promises as fs, existsSync } from 'fs'
 import * as path from 'path'
 
 export const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
@@ -42,4 +42,21 @@ export function splitArray<T>(array: T[]): [T[], T[]] {
 
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+export function rand(digits: number): number {
+  if (digits <= 0) {
+    throw new Error('Digits must be a positive integer')
+  }
+  return Math.floor(Math.random() * (digits + 1))
+}
+
+export async function deleteFileIfExists(filePath: string): Promise<void> {
+  try {
+    if (existsSync(filePath)) {
+      await fs.unlink(filePath)
+    }
+  } catch (error) {
+    throw error // rethrow the error if you want to handle it outside of the function
+  }
 }

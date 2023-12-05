@@ -1,5 +1,5 @@
 import { parentPort, workerData } from 'worker_threads'
-import { ethers, Contract } from 'ethers'
+import { ethers } from 'ethers'
 import { Logger, LogLevel } from '@eth-optimism/common-ts'
 import { CrossChainMessenger, CrossChainMessage } from '@eth-optimism/sdk'
 import Finalizer from './finalizer'
