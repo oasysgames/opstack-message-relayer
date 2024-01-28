@@ -3,7 +3,7 @@ import { ethers } from 'ethers'
 import { Logger, LogLevel } from '@eth-optimism/common-ts'
 import { CrossChainMessenger, CrossChainMessage } from '@eth-optimism/sdk'
 import Finalizer from './finalizer'
-import { Multicaller } from './multicaller'
+import { Portal } from './portal'
 // import { MockCrossChain } from '../test/mocks'
 // import Counter from './contracts/Counter.json'
 
@@ -29,8 +29,8 @@ export interface WorkerInitData {
   l1ChainId: number
   l1BlockTimeSeconds: number
   finalizerPrivateKey: string
-  // for multicaller
-  multicallAddress: string
+  // for portal
+  portalAddress: string
   multicallTargetGas: number
   gasMultiplier: number
 }
@@ -45,7 +45,7 @@ const {
   l1ChainId,
   l1BlockTimeSeconds,
   finalizerPrivateKey,
-  multicallAddress,
+  portalAddress,
   multicallTargetGas,
   gasMultiplier,
 } = workerData as WorkerInitData
@@ -86,7 +86,7 @@ const finalizer = new Finalizer(
   pollingInterval,
   logger,
   messenger,
-  new Multicaller(multicallAddress, wallet, multicallTargetGas, gasMultiplier)
+  new Portal(portalAddress, wallet, multicallTargetGas, gasMultiplier)
 )
 
 // Start finalizer

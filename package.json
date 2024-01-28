@@ -17,6 +17,7 @@
     "pre-commit": "lint-staged",
     "lint:fix": "pnpm lint:check --fix",
     "lint:check": "eslint . --max-warnings=0",
+    "compile": "hardhat compile",
     "test": "hardhat test"
   },
   "repository": "git@github.com:tak1827/message-relayer.git",

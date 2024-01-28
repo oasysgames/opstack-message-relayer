@@ -33,12 +33,12 @@ describe('Multicaller', function () {
     }
   }
 
-  describe('isOvertargetGas', function () {
+  describe('isOverTargetGas', function () {
     it('succeed', async function () {
       const { multicaller } = await setup()
 
-      expect(multicaller.isOvertargetGas(2)).to.false
-      expect(multicaller.isOvertargetGas(3)).to.true
+      expect(multicaller.isOverTargetGas(2)).to.false
+      expect(multicaller.isOverTargetGas(3)).to.true
     })
   })
 

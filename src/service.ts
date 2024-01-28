@@ -132,6 +132,7 @@ export class MessageRelayerService extends BaseServiceV2<
       this.options.logLevel,
       this.options.addressManager,
       this.options.l1CrossDomainMessenger,
+      this.options.portalAddress,
       l1RpcEndpoint,
       l1ChainId,
       this.options.l1BlockTimeSeconds,

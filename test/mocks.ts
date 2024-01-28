@@ -1,4 +1,6 @@
-import { MessageStatus } from '@eth-optimism/sdk'
+import { MessageStatus, LowLevelMessage } from '@eth-optimism/sdk'
+import { ZERO_ADDRESS } from '../src/utils'
+import { BigNumber } from 'ethers'
 
 export class MockCrossChain {
   private contract: any
@@ -36,6 +38,17 @@ export class MockCrossChain {
     }
 
     return MessageStatus.IN_CHALLENGE_PERIOD
+  }
+
+  async toLowLevelMessage(message: any): Promise<LowLevelMessage> {
+    return {
+      sender: ZERO_ADDRESS,
+      target: ZERO_ADDRESS,
+      message,
+      messageNonce: BigNumber.from(0),
+      value: BigNumber.from(0),
+      minGasLimit: BigNumber.from(123456),
+    }
   }
 }
 

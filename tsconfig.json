@@ -21,6 +21,7 @@
   "include": [
     "src/**/*",
     "src/contracts/Multicall2.json",
+    "src/contracts/IOasysPortal.json",
     "./package.json",
   ],
   "exclude": [

@@ -33,13 +33,13 @@ export class Multicaller {
     this.gasMultiplier = gasMultiplier
   }
 
-  public isOvertargetGas(size: number): boolean {
+  public isOverTargetGas(size: number): boolean {
     return this.targetGas < this.computeExpectedMulticallGas(size)
   }
 
   public async multicall(
     calls: CallWithMeta[],
-    callback: (hash: string, calls: CallWithMeta[]) => void
+    callback: (hash: string, calls: CallWithMeta[]) => void | null
   ): Promise<CallWithMeta[]> {
     const requireSuccess = true
     let estimatedGas: BigNumber

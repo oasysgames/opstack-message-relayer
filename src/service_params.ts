@@ -9,6 +9,7 @@ export type MessageRelayerOptions = {
   l1Wallet: Signer
   fromL2TransactionIndex?: number
   addressManager?: string
+  portalAddress?: string
   multicall?: string
   multicallTargetGas?: number
   l1CrossDomainMessenger?: string
@@ -52,6 +53,10 @@ export const serviceOptionsSpec: any = {
   addressManager: {
     validator: validators.str,
     desc: 'Address of the Lib_AddressManager on Layer1.',
+  },
+  portalAddress: {
+    validator: validators.str,
+    desc: 'Address of the OasysPortal on Layer1.',
   },
   multicall: {
     validator: validators.str,

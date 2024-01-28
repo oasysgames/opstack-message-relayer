@@ -18,6 +18,7 @@ export default class FinalizeWrorWrapper {
     logLevel: LogLevel,
     addressManagerAddress: string,
     l1CrossDomainMessengerAddress: string,
+    portalAddress: string,
     l1RpcEndpoint: string,
     l1ChainId: number,
     l1BlockTimeSeconds: number,
@@ -38,7 +39,7 @@ export default class FinalizeWrorWrapper {
       l1ChainId,
       l1BlockTimeSeconds,
       finalizerPrivateKey,
-      multicallAddress: multicaller.contract.address,
+      portalAddress,
       multicallTargetGas: multicaller.targetGas,
       gasMultiplier: multicaller.gasMultiplier,
     }

@@ -1,49 +1,56 @@
 import { Logger } from '@eth-optimism/common-ts'
 import { CrossChainMessenger, MessageStatus } from '@eth-optimism/sdk'
 import FixedSizeQueue from './queue'
-import { Multicaller, CallWithMeta } from './multicaller'
+import { Portal, WithdrawMsgWithMeta } from './portal'
 import { L2toL1Message } from './finalize_worker'
 
 export default class Finalizer {
   public highestFinalizedL2: number = 0
-  public interval: NodeJS.Timeout | undefined
   public queue: FixedSizeQueue<L2toL1Message>
+
+  public stopping: boolean = false
+  public stopped: boolean = false
 
   private pollingInterval: number
   private logger: Logger
   private messenger: CrossChainMessenger
-  public multicaller: Multicaller
+  public portal: Portal
 
   constructor(
     queueSize: number,
     pollingInterval: number,
     logger: Logger,
     messenger: CrossChainMessenger,
-    multicaller: Multicaller
+    portal: Portal
   ) {
     this.queue = new FixedSizeQueue<L2toL1Message>(queueSize)
     this.pollingInterval = pollingInterval
     this.logger = logger
     this.messenger = messenger
-    this.multicaller = multicaller
+    this.portal = portal
   }
 
   public async start(): Promise<void> {
-    this.interval = setInterval(async () => {
-      let calldatas: CallWithMeta[] = []
-      const target = this.messenger.contracts.l1.OptimismPortal.target
+    const itr = async () => {
+      if (this.stopping) {
+        this.stopped = true
+        return
+      }
+
+      let withdraws: WithdrawMsgWithMeta[] = []
 
       // traverse the queue
       while (this.queue.count !== 0) {
         const head = this.queue.peek()
         const txHash = head.txHash
-        const status = await this.messenger.getMessageStatus(head.message)
+        const message = head.message
+        const status = await this.messenger.getMessageStatus(message)
 
         // still in challenge period
         if (status < MessageStatus.READY_FOR_RELAY) {
           // the head in queue is the oldest message, so we assume the rest of the queue is also in challenge period
           this.logger.debug(
-            `[finalizer] message ${head.message} is still in challenge period, txhash: ${txHash}, blockHeight: ${head.blockHeight}`
+            `[finalizer] message ${message} is still in challenge period, txhash: ${txHash}, blockHeight: ${head.blockHeight}`
           )
           break
         }
@@ -52,61 +59,65 @@ export default class Finalizer {
         if (MessageStatus.READY_FOR_RELAY < status) {
           this.queue.dequeue() // evict the head from queue
           this.logger.debug(
-            `[finalizer] message ${head.message} is already relayed, txhash: ${txHash}, blockHeight: ${head.blockHeight}`
+            `[finalizer] message ${message} is already relayed, txhash: ${txHash}, blockHeight: ${head.blockHeight}`
           )
           continue
         }
 
-        // Estimate gas cost for proveMessage
-        if (this.multicaller?.singleCallGas === 0) {
-          const estimatedGas = (
-            await this.messenger.estimateGas.finalizeMessage(txHash)
-          ).toNumber()
-          this.multicaller.singleCallGas = estimatedGas
-        }
-
-        // Populate calldata, the append to the list
-        const callData = (
-          await this.messenger.populateTransaction.finalizeMessage(txHash)
-        ).data
-        calldatas.push({
-          target,
-          callData,
+        const withdraw = {
+          ...(await this.messenger.toLowLevelMessage(message)),
           blockHeight: head.blockHeight,
           txHash,
-          message: head.message,
           err: null,
-        })
+        }
 
+        withdraws.push(withdraw) // append to list
         this.queue.dequeue() // evict the head from queue
 
+        // Estimate gas cost for the future forecasting the finalize gas cost
+        // Compute per withdraw gas by substracting double withdraw gas from single withdraw gas
+        if (this.portal?.perWithdrawGas === 0) {
+          const estimatedGas =
+            await this.portal.contract.estimateGas.finalizeWithdrawalTransactions(
+              this.portal.convertToCall(withdraws)
+            )
+          this.portal.setGasFieldsToEstimate(estimatedGas.toNumber())
+        }
+
         // go next when lower than multicall target gas
-        if (!this.multicaller?.isOvertargetGas(calldatas.length)) {
+        if (!this.portal?.isOverTargetGas(withdraws.length)) {
           continue
         }
 
         // multicall, and handle the result
         this.handleMulticallResult(
-          calldatas,
-          await this.multicaller?.multicall(calldatas, null)
+          withdraws,
+          await this.portal?.finalizeWithdrawals(withdraws, null)
         )
 
         // reset calldata list
-        calldatas = []
+        withdraws = []
       }
 
-      // flush the rest of calldatas
-      if (0 < calldatas.length)
+      // flush the rest of withdraws
+      if (0 < withdraws.length) {
         this.handleMulticallResult(
-          calldatas,
-          await this.multicaller?.multicall(calldatas, null)
+          withdraws,
+          await this.portal?.finalizeWithdrawals(withdraws, null)
         )
-    }, this.pollingInterval)
+      }
+
+      // recursive call
+      setTimeout(itr, this.pollingInterval)
+    }
+
+    // first call
+    itr()
   }
 
   protected handleMulticallResult(
-    calleds: CallWithMeta[],
-    faileds: CallWithMeta[]
+    calleds: WithdrawMsgWithMeta[],
+    faileds: WithdrawMsgWithMeta[]
   ): void {
     const failedIds = new Set(faileds.map((failed) => failed.txHash))
     const succeeds = calleds.filter((call) => !failedIds.has(call.txHash))
@@ -121,9 +132,15 @@ export default class Finalizer {
     }
   }
 
-  public stop(): void {
+  public async stop(): Promise<void> {
     this.logger.debug(`[finalizer] stopping...`)
-    clearInterval(this.interval)
+    this.stopping = true
+    const waitForStopped = async () => {
+      while (!this.stopped) {
+        await new Promise((resolve) => setTimeout(resolve, 100))
+      }
+    }
+    await waitForStopped()
     this.logger.debug(`[finalizer] stopped`)
   }
 
@@ -139,9 +156,9 @@ export default class Finalizer {
     )
   }
 
-  protected updateHighest(calldatas: CallWithMeta[]): boolean {
+  protected updateHighest(withdraws: WithdrawMsgWithMeta[]): boolean {
     // assume the last element is the hightst, so doen't traverse all the element
-    let highest = calldatas[calldatas.length - 1].blockHeight
+    let highest = withdraws[withdraws.length - 1].blockHeight
     if (0 < highest) highest -= 1 // subtract `1` to assure the all transaction in block is finalized
     if (highest <= this.highestFinalizedL2) return false
 

@@ -130,7 +130,7 @@ export default class Prover {
       })
 
       // go next when lower than multicall target gas
-      if (!this.multicaller?.isOvertargetGas(calldatas.length)) {
+      if (!this.multicaller?.isOverTargetGas(calldatas.length)) {
         continue
       }
 
