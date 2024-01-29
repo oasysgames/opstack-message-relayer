@@ -146,6 +146,9 @@ deployments
 # Test
 state.test.json
 
+# from private-opstack/bridge-tutorial
+sdk.js
+
 # Custom
 sandbox
 .note.md

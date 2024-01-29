@@ -13,7 +13,7 @@
     "build": "tsc -p ./tsconfig.json",
     "clean": "rm -rf  dist/",
     "lint": "pnpm lint:fix && pnpm lint:check",
-    "fmt": "prettier --write --list-different '{src,test}/**/*'",
+    "fmt": "prettier --write --list-different '{src,test}/**/*.{ts,js}'",
     "pre-commit": "lint-staged",
     "lint:fix": "pnpm lint:check --fix",
     "lint:check": "eslint . --max-warnings=0",
