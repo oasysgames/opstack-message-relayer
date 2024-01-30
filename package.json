@@ -1,6 +1,6 @@
 {
   "name": "message-relayer",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "main": "dist/index",
   "description": "Opstack message relayer developed using sdk",
   "files": [
@@ -8,7 +8,7 @@
     "src/*"
   ],
   "scripts": {
-    "start": "ts-node ./src/service.ts",
+    "start": "tsx ./src/service.ts",
     "test:coverage": "echo 'No tests defined.'",
     "build": "tsc -p ./tsconfig.json",
     "clean": "rm -rf  dist/",
@@ -45,6 +45,7 @@
     "hardhat": "^2.17.2",
     "prettier": "^2.8.0",
     "ts-node": "^10.9.1",
+    "tsx": "^4.7.0",
     "typescript": "^5.1.6"
   },
   "peerDependencies": {
