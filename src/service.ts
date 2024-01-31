@@ -18,10 +18,11 @@ import {
   serviseMetricsSpec,
 } from './service_params'
 import { Multicaller, CallWithMeta } from './multicaller'
-import FinalizeWrorWrapper from './worker_wrapper'
+import FinalizeWorkCreator from './worker_creator'
 import { FinalizerMessage, L2toL1Message } from './finalize_worker'
 import { MessageRelayerMetrics, MessageRelayerState } from './service_types'
 import Prover from './prover'
+import { ZERO_ADDRESS } from './utils'
 
 export class MessageRelayerService extends BaseServiceV2<
   MessageRelayerOptions,
@@ -32,49 +33,41 @@ export class MessageRelayerService extends BaseServiceV2<
   private messenger: CrossChainMessenger
   private multicaller?: Multicaller
   private prover?: Prover
-  private finalizeWorker?: FinalizeWrorWrapper
+  private finalizeWorkerCreator?: FinalizeWorkCreator
 
   constructor(options?: Partial<MessageRelayerOptions & StandardOptions>) {
     super({
       name: serviceName,
       version: serviceVersion,
-      options,
+      options: {
+        ...options,
+        loopIntervalMs: options?.loopIntervalMs ?? 5000,
+      },
       optionsSpec: serviceOptionsSpec,
       metricsSpec: serviseMetricsSpec,
     })
   }
 
   protected async init(): Promise<void> {
+    this.logger.info('startup options', this.options)
+
     this.wallet = this.options.l1Wallet.connect(this.options.l1RpcProvider)
-
-    const l1ContractOpts = [
-      this.options.addressManager,
-      this.options.l1CrossDomainMessenger,
-      this.options.l1StandardBridge,
-      this.options.stateCommitmentChain,
-      this.options.canonicalTransactionChain,
-      this.options.bondManager,
-    ]
-
-    let contracts: DeepPartial<OEContractsLike> = undefined
-    if (l1ContractOpts.every((x) => x)) {
-      contracts = {
-        l1: {
-          AddressManager: this.options.addressManager,
-          L1CrossDomainMessenger: this.options.l1CrossDomainMessenger,
-          L1StandardBridge: this.options.l1StandardBridge,
-          StateCommitmentChain: this.options.stateCommitmentChain,
-          CanonicalTransactionChain: this.options.canonicalTransactionChain,
-          BondManager: this.options.bondManager,
-        },
-        l2: DEFAULT_L2_CONTRACT_ADDRESSES,
-      }
-    } else if (l1ContractOpts.some((x) => x)) {
-      throw new Error('L1 contract address is missing.')
+    const contracts: DeepPartial<OEContractsLike> = {
+      l1: {
+        AddressManager: this.options.addressManager,
+        L1CrossDomainMessenger: this.options.l1CrossDomainMessenger,
+        L1StandardBridge: ZERO_ADDRESS, // dummy address
+        StateCommitmentChain: ZERO_ADDRESS, // dummy address
+        CanonicalTransactionChain: ZERO_ADDRESS, // dummy address
+        BondManager: ZERO_ADDRESS, // dummy address
+        OptimismPortal: this.options.portalAddress,
+        L2OutputOracle: this.options.OutputOracle, // dummy address
+      },
+      l2: DEFAULT_L2_CONTRACT_ADDRESSES,
     }
-
     const l1ChainId = (await this.wallet.provider.getNetwork()).chainId
     const l2ChainId = (await this.options.l2RpcProvider.getNetwork()).chainId
+
     this.messenger = new CrossChainMessenger({
       l1SignerOrProvider: this.wallet,
       l2SignerOrProvider: this.options.l2RpcProvider,
@@ -94,38 +87,16 @@ export class MessageRelayerService extends BaseServiceV2<
     })
 
     this.multicaller = new Multicaller(
-      this.options.multicall,
+      this.options.multicallAddress,
       this.wallet,
       this.options.multicallTargetGas,
       this.options.gasMultiplier
     )
 
-    this.prover = new Prover(
-      this.metrics,
-      this.logger,
-      this.options.stateFilePath,
-      this.options.fromL2TransactionIndex,
-      this.options.l2blockConfirmations,
-      this.options.reorgSafetyDepth,
-      this.messenger,
-      this.multicaller,
-      (succeeds: CallWithMeta[]) => {
-        const messages: L2toL1Message[] = succeeds.map((call) => {
-          return {
-            message: call.message,
-            txHash: call.txHash,
-            blockHeight: call.blockHeight,
-          }
-        })
-        this.finalizeWorker?.postMessage(messages)
-      }
-    )
-    await this.prover.init()
-
     const l1RpcEndpoint = (
       this.options.l1RpcProvider as providers.JsonRpcProvider
     ).connection.url
-    this.finalizeWorker = new FinalizeWrorWrapper(
+    this.finalizeWorkerCreator = new FinalizeWorkCreator(
       this.logger,
       this.options.queueSize,
       this.options.pollInterval,
@@ -141,6 +112,28 @@ export class MessageRelayerService extends BaseServiceV2<
       (message: FinalizerMessage) =>
         this.prover?.updateHighestFinalizedL2(message.highestFinalizedL2)
     )
+
+    this.prover = new Prover(
+      this.metrics,
+      this.logger,
+      this.options.stateFilePath,
+      this.options.fromL2TransactionIndex,
+      this.options.depositConfirmationBlocks,
+      this.options.reorgSafetyDepth,
+      this.messenger,
+      this.multicaller,
+      (succeeds: CallWithMeta[]) => {
+        const messages: L2toL1Message[] = succeeds.map((call) => {
+          return {
+            message: call.message,
+            txHash: call.txHash,
+            blockHeight: call.blockHeight,
+          }
+        })
+        this.finalizeWorkerCreator?.postMessage(messages)
+      }
+    )
+    await this.prover.init()
   }
 
   async routes(router: ExpressRouter): Promise<void> {
@@ -160,7 +153,7 @@ export class MessageRelayerService extends BaseServiceV2<
   // override to write the last state
   public async stop(): Promise<void> {
     await this.prover.writeState()
-    this.finalizeWorker?.terminate()
+    this.finalizeWorkerCreator?.terminate()
     await super.stop()
   }
 }

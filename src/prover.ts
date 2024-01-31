@@ -1,5 +1,9 @@
 import { Logger, StandardMetrics } from '@eth-optimism/common-ts'
-import { CrossChainMessenger, MessageStatus } from '@eth-optimism/sdk'
+import {
+  CrossChainMessenger,
+  MessageStatus,
+  CrossChainMessage,
+} from '@eth-optimism/sdk'
 import { Multicaller, CallWithMeta } from './multicaller'
 import { readFromFile, writeToFile } from './utils'
 import { MessageRelayerMetrics, MessageRelayerState } from './service_types'
@@ -51,6 +55,7 @@ export default class Prover {
       this.state.highestProvenL2 = this.fromL2TransactionIndex
       this.state.highestFinalizedL2 = this.fromL2TransactionIndex
     }
+    this.logger.info(`[prover] init: ${JSON.stringify(this.state)}`)
   }
 
   async writeState() {
@@ -94,17 +99,40 @@ export default class Prover {
       return calldatas
     }
 
-    const target = this.messenger.contracts.l1.OptimismPortal.target
+    this.logger.debug(
+      `[prover] blockNumber: ${block.number}, txs: ${block.transactions.length}`
+    )
+
+    const target = this.messenger.contracts.l1.OptimismPortal.address
 
     for (let j = 0; j < block.transactions.length; j++) {
       const txHash = block.transactions[j].hash
-      const message = await this.messenger.toCrossChainMessage(txHash)
+
+      let message: CrossChainMessage
+      try {
+        message = await this.messenger.toCrossChainMessage(txHash)
+      } catch (err) {
+        // skip if the tx is not a cross-chain message
+        const noWithdrawMsg = 'withdrawal index 0 out of bounds'
+        if (err.message.includes(noWithdrawMsg)) {
+          this.logger.debug(`[prover] skip txHash: ${txHash}`)
+          continue
+        }
+        // otherwise, throw the error
+        throw err
+      }
+
       const status = await this.messenger.getMessageStatus(message)
       this.logger.debug(
         `[prover] txHash: ${txHash}, status: ${MessageStatus[status]})`
       )
 
-      if (status !== MessageStatus.READY_TO_PROVE) {
+      if (status === MessageStatus.STATE_ROOT_NOT_PUBLISHED) {
+        this.logger.info(`[prover] waits state root: ${txHash}`)
+        // exit if the tx is not ready to prove
+        throw new Error(`not state root published: ${txHash}`)
+      } else if (status !== MessageStatus.READY_TO_PROVE) {
+        // skip if other status than READY_TO_PROVE
         continue
       }
 
@@ -114,6 +142,7 @@ export default class Prover {
           await this.messenger.estimateGas.proveMessage(txHash)
         ).toNumber()
         this.multicaller.singleCallGas = estimatedGas
+        this.logger.info(`[prover] estimated gas: ${estimatedGas} wei`)
       }
 
       // Populate calldata, the append to the list
@@ -164,17 +193,32 @@ export default class Prover {
     this.updateHighestKnownL2(latest)
 
     let calldatas: CallWithMeta[] = []
+    let waitsStateRoot = false
 
     for (let h = this.startScanHeight(); h <= this.endScanHeight(); h++) {
-      calldatas = await this.handleSingleBlock(h, calldatas)
+      try {
+        calldatas = await this.handleSingleBlock(h, calldatas)
+      } catch (err) {
+        if (err.message.includes('not state root published')) {
+          waitsStateRoot = true
+          break
+        }
+        throw err
+      }
     }
 
     // flush the left calldata
-    if (0 < calldatas.length)
+    if (0 < calldatas.length) {
       this.handleMulticallResult(
         calldatas,
         await this.multicaller?.multicall(calldatas, null)
       )
+    }
+
+    // update the proven L2 height
+    if (!waitsStateRoot) {
+      this.updateHighestProvenL2(this.endScanHeight())
+    }
   }
 
   protected handleMulticallResult(
@@ -184,12 +228,18 @@ export default class Prover {
     const failedIds = new Set(faileds.map((failed) => failed.txHash))
     const succeeds = calleds.filter((call) => !failedIds.has(call.txHash))
 
-    // update the highest checked L2 height
-    if (this.updateHighestCheckedL2(succeeds)) {
-      this.metrics.numRelayedMessages.inc(succeeds.length)
+    if (0 < succeeds.length) {
+      this.logger.info(
+        `[prover] succeeded txHash: ${succeeds.map((call) => call.txHash)}`
+      )
+
+      // update the highest checked L2 height
+      if (this.updateHighestCheckedL2(succeeds)) {
+        this.metrics.numRelayedMessages.inc(succeeds.length)
+      }
+      // post the proven messages to the finalizer
+      this.postMessage(succeeds)
     }
-    // post the proven messages to the finalizer
-    this.postMessage(succeeds)
 
     // record log the failed list with each error message
     for (const fail of faileds) {
@@ -200,11 +250,12 @@ export default class Prover {
   }
 
   public startScanHeight(): number {
-    if (this.initalIteration) {
-      // iterate block from the highest finalized at the start of the service
-      this.initalIteration = false
-      return this.state.highestFinalizedL2
-    }
+    // TODO: comment in
+    // if (this.initalIteration) {
+    //   // iterate block from the highest finalized at the start of the service
+    //   this.initalIteration = false
+    //   return this.state.highestFinalizedL2
+    // }
     return this.state.highestProvenL2 + 1
   }
 
@@ -240,19 +291,19 @@ export default class Prover {
   public updateHighestKnownL2(latest: number): void {
     this.state.highestKnownL2 = latest
     this.metrics.highestKnownL2.set(this.state.highestKnownL2)
-    this.logger.debug(`[prover] highestKnownL2: ${this.state.highestKnownL2}`)
+    this.logger.info(`[prover] highestKnownL2: ${this.state.highestKnownL2}`)
   }
 
   public updateHighestProvenL2(latest: number): void {
     this.state.highestProvenL2 = latest
     this.metrics.highestProvenL2.set(this.state.highestProvenL2)
-    this.logger.debug(`[prover] highestProvenL2: ${this.state.highestProvenL2}`)
+    this.logger.info(`[prover] highestProvenL2: ${this.state.highestProvenL2}`)
   }
 
   public updateHighestFinalizedL2(latest: number): void {
     this.state.highestFinalizedL2 = latest
     this.metrics.highestFinalizedL2.set(this.state.highestFinalizedL2)
-    this.logger.debug(
+    this.logger.info(
       `[prover] highestFinalizedL2: ${this.state.highestFinalizedL2}`
     )
   }

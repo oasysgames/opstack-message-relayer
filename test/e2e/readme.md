@@ -2,6 +2,10 @@
 E2E tests are conducted on top of the [private-opstack](https://github.com/oasysgames/private-opstack). Therefore, before running the test script, we need to start up the L1L2 chains.
 
 ## Setup
+1. Deploy Multicall.
+```sh
+pnpm run deploy
+```
 1. The first step is to copy sdk.js from the [bridge-tutorial](https://github.com/oasysgames/private-opstack/tree/main/bridge-tutorial):
 ```sh
 cp ../../../private-opstack/bridge-tutorial/src/lib/sdk.js lib/

@@ -9,22 +9,23 @@ export type MessageRelayerOptions = {
   l1Wallet: Signer
   fromL2TransactionIndex?: number
   addressManager?: string
-  portalAddress?: string
-  multicall?: string
-  multicallTargetGas?: number
   l1CrossDomainMessenger?: string
-  l1StandardBridge?: string
-  l2StandardBridge?: string
-  stateCommitmentChain?: string
-  canonicalTransactionChain?: string
-  bondManager?: string
+  portalAddress?: string
+  OutputOracle?: string
+  multicallAddress?: string
+  multicallTargetGas?: number
+  // l1StandardBridge?: string
+  // l2StandardBridge?: string
+  // stateCommitmentChain?: string
+  // canonicalTransactionChain?: string
+  // bondManager?: string
   pollInterval?: number
   receiptTimeout?: number
   gasMultiplier?: number
   depositConfirmationBlocks?: number
   l1BlockTimeSeconds?: number
   stateFilePath?: string
-  l2blockConfirmations?: number
+  // l2blockConfirmations?: number
   reorgSafetyDepth?: number
   queueSize?: number
   finalizerPrivateKey: string
@@ -45,20 +46,23 @@ export const serviceOptionsSpec: any = {
     validator: validators.wallet,
     desc: 'Wallet used to interact with L1.',
   },
-  fromL2TransactionIndex: {
-    validator: validators.num,
-    desc: 'Index of the first L2 transaction to start processing from.',
-    default: 0,
-  },
   addressManager: {
     validator: validators.str,
     desc: 'Address of the Lib_AddressManager on Layer1.',
+  },
+  l1CrossDomainMessenger: {
+    validator: validators.str,
+    desc: 'Address of the Proxy__OVM_L1CrossDomainMessenger on Layer1.',
   },
   portalAddress: {
     validator: validators.str,
     desc: 'Address of the OasysPortal on Layer1.',
   },
-  multicall: {
+  OutputOracle: {
+    validator: validators.str,
+    desc: 'Address of the L2OutputOracle on Layer1.',
+  },
+  multicallAddress: {
     validator: validators.str,
     desc: 'Address of the multicall2 on Layer1.',
   },
@@ -67,78 +71,79 @@ export const serviceOptionsSpec: any = {
     desc: 'gas target for multicall contract when the relay',
     default: 1500000,
   },
-  l1CrossDomainMessenger: {
-    validator: validators.str,
-    desc: 'Address of the Proxy__OVM_L1CrossDomainMessenger on Layer1.',
-  },
-  l1StandardBridge: {
-    validator: validators.str,
-    desc: 'Address of the Proxy__OVM_L1StandardBridge on Layer1.',
-  },
-  l2StandardBridge: {
-    validator: validators.str,
-    desc: 'Address of the L2StandardBridge on Layer2.',
-  },
-  stateCommitmentChain: {
-    validator: validators.str,
-    desc: 'Address of the StateCommitmentChain on Layer1.',
-  },
-  canonicalTransactionChain: {
-    validator: validators.str,
-    desc: 'Address of the CanonicalTransactionChain on Layer1.',
-  },
-  bondManager: {
-    validator: validators.str,
-    desc: 'Address of the BondManager on Layer1.',
-  },
-  pollInterval: {
-    validator: validators.num,
-    desc: 'Polling interval of StateCommitmentChain (unit: msec).',
-    default: 1000,
-  },
-  receiptTimeout: {
-    validator: validators.num,
-    desc: 'Receipt wait timeout for relay transaction (unit: msec).',
-    default: 15000,
-  },
   gasMultiplier: {
     validator: validators.num,
     desc: 'Gas limit multiplier.',
     default: 1.1,
   },
-  depositConfirmationBlocks: {
+  // l1StandardBridge: {
+  //   validator: validators.str,
+  //   desc: 'Address of the Proxy__OVM_L1StandardBridge on Layer1.',
+  // },
+  // l2StandardBridge: {
+  //   validator: validators.str,
+  //   desc: 'Address of the L2StandardBridge on Layer2.',
+  // },
+  // stateCommitmentChain: {
+  //   validator: validators.str,
+  //   desc: 'Address of the StateCommitmentChain on Layer1.',
+  // },
+  // canonicalTransactionChain: {
+  //   validator: validators.str,
+  //   desc: 'Address of the CanonicalTransactionChain on Layer1.',
+  // },
+  // bondManager: {
+  //   validator: validators.str,
+  //   desc: 'Address of the BondManager on Layer1.',
+  // },
+  pollInterval: {
     validator: validators.num,
-    desc: 'Blocks before a deposit is confirmed',
-    default: 2,
+    desc: 'Polling interval of StateCommitmentChain (unit: msec).',
+    default: 1000,
   },
+  // receiptTimeout: {
+  //   validator: validators.num,
+  //   desc: 'Receipt wait timeout for relay transaction (unit: msec).',
+  //   default: 15000,
+  // },
   l1BlockTimeSeconds: {
     validator: validators.num,
     desc: 'Block time in seconds for the L1 chain.',
     default: 15,
+  },
+  depositConfirmationBlocks: {
+    validator: validators.num,
+    desc: 'Blocks before a deposit is confirmed',
+    default: 8,
+  },
+  reorgSafetyDepth: {
+    validator: validators.num,
+    desc: 'Number of blocks addionally rolled back from detected height to ensure safety',
+    default: 4,
   },
   stateFilePath: {
     validator: validators.str,
     desc: 'the file of state file whitch holds the last state',
     default: '~/.message-relayer/state.json',
   },
-  l2blockConfirmations: {
+  fromL2TransactionIndex: {
     validator: validators.num,
-    desc: 'Number of blocks to wait before checking for new messages',
-    default: 8,
+    desc: 'Index of the first L2 transaction to start processing from.',
+    default: 0,
   },
-  reorgSafetyDepth: {
-    validator: validators.num,
-    desc: 'Number of blocks addionally rolled back from detected heiht to ensure safety',
-    default: 4,
-  },
+  // l2blockConfirmations: {
+  //   validator: validators.num,
+  //   desc: 'Number of blocks to wait before checking for new messages',
+  //   default: 8,
+  // },
   queueSize: {
     validator: validators.num,
     desc: 'Number of messages to queue before rejecting new messages',
-    default: 4096,
+    default: 8192,
   },
   finalizerPrivateKey: {
     validator: validators.str,
-    desc: 'Private key for finalizer',
+    desc: 'Private key of finalizer',
   },
 }
 
