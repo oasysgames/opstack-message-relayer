@@ -228,7 +228,7 @@ describe('Prover', function () {
       await prover.handleMultipleBlock()
 
       expect(prover.highestKnownL2()).to.equal(highestKnown + 2)
-      expect(prover.highestProvenL2()).to.equal(provenL2 + 1)
+      expect(prover.highestProvenL2()).to.equal(provenL2 + 2)
       expect(prover.highestFinalizedL2()).to.equal(finalizedL2)
       expect(await counter.get()).to.equal(4)
       expect(succeededCalldatas.map((c) => c.txHash)).to.members([
@@ -237,7 +237,7 @@ describe('Prover', function () {
         '0x4',
         '0x5',
       ])
-      expect(prover.startScanHeight()).to.equal(provenL2 + 2)
+      expect(prover.startScanHeight()).to.equal(provenL2 + 3)
       expect(prover.endScanHeight()).to.equal(provenL2 + 2)
 
       messenger.setBlockNumber(highestKnown + 3)
@@ -245,7 +245,7 @@ describe('Prover', function () {
       // @ts-ignore
       await prover.handleMultipleBlock()
       expect(prover.highestKnownL2()).to.equal(highestKnown + 3)
-      expect(prover.highestProvenL2()).to.equal(provenL2 + 1)
+      expect(prover.highestProvenL2()).to.equal(provenL2 + 2)
       expect(prover.highestFinalizedL2()).to.equal(finalizedL2)
     })
   })

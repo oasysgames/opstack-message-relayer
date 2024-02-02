@@ -8,7 +8,7 @@ pnpm run deploy
 ```
 1. The first step is to copy sdk.js from the [bridge-tutorial](https://github.com/oasysgames/private-opstack/tree/main/bridge-tutorial):
 ```sh
-cp ../../../private-opstack/bridge-tutorial/src/lib/sdk.js lib/
+cp ../../private-opstack/bridge-tutorial/src/lib/sdk.js lib/
 ```
 1. Edit the .envrc file to export a private key. This key is used to bridge OAS to L2. The bridged OAS will be utilized for L2 gas costs. Then, apply the environment file:
 ```sh
@@ -23,4 +23,9 @@ npx ts-node setup.ts
 To verify the entire process, run the relay.test.ts file. This ensures that the entire L2 withdrawal process is correctly executed, including proving and finalizing the withdrawal:
 ```sh
 npx ts-node relay.test.ts
+```
+
+## Reset
+```sh
+rm ./state.test.json
 ```

@@ -103,7 +103,9 @@ export default class Prover {
       `[prover] blockNumber: ${block.number}, txs: ${block.transactions.length}`
     )
 
-    const target = this.messenger.contracts.l1.OptimismPortal.address
+    const target =
+      this.messenger.contracts.l1.OptimismPortal.address ||
+      this.messenger.contracts.l1.OptimismPortal.target
 
     for (let j = 0; j < block.transactions.length; j++) {
       const txHash = block.transactions[j].hash
@@ -230,7 +232,9 @@ export default class Prover {
 
     if (0 < succeeds.length) {
       this.logger.info(
-        `[prover] succeeded txHash: ${succeeds.map((call) => call.txHash)}`
+        `[prover] succeeded(${succeeds.length}) txHash: ${succeeds.map(
+          (call) => call.txHash
+        )}`
       )
 
       // update the highest checked L2 height

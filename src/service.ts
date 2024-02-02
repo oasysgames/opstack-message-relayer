@@ -61,7 +61,7 @@ export class MessageRelayerService extends BaseServiceV2<
         CanonicalTransactionChain: ZERO_ADDRESS, // dummy address
         BondManager: ZERO_ADDRESS, // dummy address
         OptimismPortal: this.options.portalAddress,
-        L2OutputOracle: this.options.OutputOracle, // dummy address
+        L2OutputOracle: this.options.OutputOracle,
       },
       l2: DEFAULT_L2_CONTRACT_ADDRESSES,
     }

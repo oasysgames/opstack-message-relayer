@@ -1,9 +1,14 @@
 import { parentPort, workerData } from 'worker_threads'
 import { ethers } from 'ethers'
 import { Logger, LogLevel } from '@eth-optimism/common-ts'
-import { CrossChainMessenger, CrossChainMessage } from '@eth-optimism/sdk'
+import {
+  CrossChainMessenger,
+  CrossChainMessage,
+  DEFAULT_L2_CONTRACT_ADDRESSES,
+} from '@eth-optimism/sdk'
 import Finalizer from './finalizer'
 import { Portal } from './portal'
+import { ZERO_ADDRESS } from './utils'
 // import { MockCrossChain } from '../test/mocks'
 // import Counter from './contracts/Counter.json'
 
@@ -50,25 +55,34 @@ const {
   gasMultiplier,
 } = workerData as WorkerInitData
 
-const provider = new ethers.providers.JsonRpcProvider(l1RpcEndpoint)
-const wallet = new ethers.Wallet(finalizerPrivateKey, provider)
-
-let logger = new Logger({
+const logger = new Logger({
   name: 'finalizer_worker',
   level: logLevel,
 })
 
-let messenger = new CrossChainMessenger({
+logger.info(`[finalize worker] workerData`, workerData)
+
+const provider = new ethers.providers.JsonRpcProvider(l1RpcEndpoint)
+const wallet = new ethers.Wallet(finalizerPrivateKey, provider)
+
+const messenger = new CrossChainMessenger({
   l1SignerOrProvider: wallet,
-  l2SignerOrProvider: null,
+  l2SignerOrProvider: wallet, // dummy
   l1ChainId,
-  l2ChainId: null,
+  l2ChainId: 0, // dummy
   l1BlockTimeSeconds,
   contracts: {
     l1: {
       AddressManager: addressManagerAddress,
       L1CrossDomainMessenger: l1CrossDomainMessengerAddress,
+      L1StandardBridge: ZERO_ADDRESS, // dummy address
+      StateCommitmentChain: ZERO_ADDRESS, // dummy address
+      CanonicalTransactionChain: ZERO_ADDRESS, // dummy address
+      BondManager: ZERO_ADDRESS, // dummy address
+      OptimismPortal: ZERO_ADDRESS, // dummy address
+      L2OutputOracle: ZERO_ADDRESS, // dummy address
     },
+    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
   },
   bedrock: true,
 })

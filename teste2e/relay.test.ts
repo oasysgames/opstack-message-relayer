@@ -8,14 +8,14 @@ const AMOUNT = '1' // 1 OAS
 
 async function main() {
   // create test accounts
-  const accounts = createWallets(100)
+  const accounts = createWallets(123)
   const wallets = createWallets(TEST_ACCOUNTS.length, TEST_ACCOUNTS)
 
   // initiate relay
   const amount = BigInt(AMOUNT) * Ether
   const txs: TransactionResponse[] = []
   let messenger
-  for (let i = 1; i <= accounts.length; i++) {
+  for (let i = 0; i < accounts.length; i++) {
     const wallet = wallets[i % wallets.length]
     const { l1Signer, l2Signer } = opsdk.getSigners({
       privateKey: wallet.privateKey,
@@ -25,19 +25,17 @@ async function main() {
       recipient: accounts[i].address,
     })
     txs.push(tx)
-    log(`sent tx: ${tx.hash}`)
-    if (i % wallets.length == 0) {
-      await messenger.waitForMessageStatus(
-        tx.hash,
-        MessageStatus.READY_TO_PROVE
-      )
-    }
+    log(`sent tx: ${tx.hash}\n`)
   }
+
+  // wait until the last tx is mined
+  await txs[txs.length - 1].wait()
 
   // wait until all txs are proved
   for (const tx of txs) {
+    console.log(`waiting for tx: ${tx.hash}\n`)
     await messenger.waitForMessageStatus(tx.hash, MessageStatus.READY_TO_PROVE)
-    log(`proved tx: ${tx.hash}`)
+    log(`proved tx: ${tx.hash}\n`)
   }
 }
 
