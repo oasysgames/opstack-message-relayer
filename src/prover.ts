@@ -236,7 +236,6 @@ export default class Prover {
           (call) => call.txHash
         )}`
       )
-
       // update the highest checked L2 height
       if (this.updateHighestCheckedL2(succeeds)) {
         this.metrics.numRelayedMessages.inc(succeeds.length)

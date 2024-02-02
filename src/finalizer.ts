@@ -84,8 +84,8 @@ export default class Finalizer {
           this.portal.setGasFieldsToEstimate(estimatedGas.toNumber())
         }
 
-        // go next when lower than multicall target gas
-        if (!this.portal?.isOverTargetGas(withdraws.length)) {
+        // go next when lower than multicall target gas and if not stopping
+        if (!this.portal?.isOverTargetGas(withdraws.length) && !this.stopping) {
           continue
         }
 
@@ -122,7 +122,15 @@ export default class Finalizer {
     const failedIds = new Set(faileds.map((failed) => failed.txHash))
     const succeeds = calleds.filter((call) => !failedIds.has(call.txHash))
 
-    this.updateHighest(succeeds)
+    if (0 < succeeds.length) {
+      this.logger.info(
+        `[finalizer] succeeded(${succeeds.length}) txHash: ${succeeds.map(
+          (call) => call.txHash
+        )}`
+      )
+      // update the highest finalized L2
+      this.updateHighestFinalized(succeeds)
+    }
 
     // log the failed list with each error message
     for (const fail of faileds) {
@@ -156,7 +164,7 @@ export default class Finalizer {
     )
   }
 
-  protected updateHighest(withdraws: WithdrawMsgWithMeta[]): boolean {
+  protected updateHighestFinalized(withdraws: WithdrawMsgWithMeta[]): boolean {
     // assume the last element is the hightst, so doen't traverse all the element
     let highest = withdraws[withdraws.length - 1].blockHeight
     if (0 < highest) highest -= 1 // subtract `1` to assure the all transaction in block is finalized
