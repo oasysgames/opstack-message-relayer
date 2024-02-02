@@ -27,7 +27,7 @@ export type MessageRelayerOptions = {
   stateFilePath?: string
   // l2blockConfirmations?: number
   reorgSafetyDepth?: number
-  queueSize?: number
+  queuePath?: number
   finalizerPrivateKey: string
 }
 
@@ -136,10 +136,10 @@ export const serviceOptionsSpec: any = {
   //   desc: 'Number of blocks to wait before checking for new messages',
   //   default: 8,
   // },
-  queueSize: {
-    validator: validators.num,
+  queuePath: {
+    validator: validators.str,
     desc: 'Number of messages to queue before rejecting new messages',
-    default: 8192,
+    default: './.queuestore',
   },
   finalizerPrivateKey: {
     validator: validators.str,

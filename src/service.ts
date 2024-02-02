@@ -98,7 +98,7 @@ export class MessageRelayerService extends BaseServiceV2<
     ).connection.url
     this.finalizeWorkerCreator = new FinalizeWorkCreator(
       this.logger,
-      this.options.queueSize,
+      this.options.queuePath,
       this.options.pollInterval,
       this.options.logLevel,
       this.options.addressManager,

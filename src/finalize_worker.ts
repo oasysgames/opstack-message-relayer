@@ -23,7 +23,7 @@ export type FinalizerMessage = {
 }
 
 export interface WorkerInitData {
-  queueSize: number
+  queuePath: string
   pollingInterval: number
   // for logger
   logLevel: LogLevel
@@ -41,7 +41,7 @@ export interface WorkerInitData {
 }
 
 const {
-  queueSize,
+  queuePath,
   pollingInterval,
   logLevel,
   addressManagerAddress,
@@ -96,7 +96,7 @@ const messenger = new CrossChainMessenger({
 // }
 
 const finalizer = new Finalizer(
-  queueSize,
+  queuePath,
   pollingInterval,
   logger,
   messenger,

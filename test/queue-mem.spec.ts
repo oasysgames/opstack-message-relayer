@@ -1,5 +1,5 @@
 import { expect } from 'chai'
-import FixedSizeQueue from '../src/queue'
+import FixedSizeQueue from '../src/queue-mem'
 
 describe('FixedSizeQueue', function () {
   const limit = 10

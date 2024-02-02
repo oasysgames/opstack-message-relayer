@@ -1,12 +1,13 @@
 import { Logger } from '@eth-optimism/common-ts'
 import { CrossChainMessenger, MessageStatus } from '@eth-optimism/sdk'
-import FixedSizeQueue from './queue'
+import DynamicSizeQueue from './queue-storage'
+import FixedSizeQueue from './queue-mem'
 import { Portal, WithdrawMsgWithMeta } from './portal'
 import { L2toL1Message } from './finalize_worker'
 
 export default class Finalizer {
   public highestFinalizedL2: number = 0
-  public queue: FixedSizeQueue<L2toL1Message>
+  public queue: DynamicSizeQueue<L2toL1Message> | FixedSizeQueue<L2toL1Message>
 
   public stopping: boolean = false
   public stopped: boolean = false
@@ -17,13 +18,17 @@ export default class Finalizer {
   public portal: Portal
 
   constructor(
-    queueSize: number,
+    queuePath: string,
     pollingInterval: number,
     logger: Logger,
     messenger: CrossChainMessenger,
     portal: Portal
   ) {
-    this.queue = new FixedSizeQueue<L2toL1Message>(queueSize)
+    if (queuePath !== '') {
+      this.queue = new DynamicSizeQueue<L2toL1Message>(queuePath)
+    } else {
+      this.queue = new FixedSizeQueue<L2toL1Message>(1024)
+    }
     this.pollingInterval = pollingInterval
     this.logger = logger
     this.messenger = messenger
@@ -153,11 +158,12 @@ export default class Finalizer {
   }
 
   public appendMessage(...messages: L2toL1Message[]): void {
-    if (this.queue.size < this.queue.count + messages.length) {
-      throw new Error(
-        `will exceed queue size, please increase queue size (current: ${this.queue.size})`
-      )
-    }
+    // comment in if the queue is fixed size
+    // if (this.queue.size < this.queue.count + messages.length) {
+    //   throw new Error(
+    //     `will exceed queue size, please increase queue size (current: ${this.queue.size})`
+    //   )
+    // }
     this.queue.enqueue(...messages)
     this.logger.debug(
       `[finalizer] received txhashes: ${messages.map((m) => m.txHash)}`

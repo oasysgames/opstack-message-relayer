@@ -145,6 +145,7 @@ deployments
 
 # Test
 state.test.json
+.queuestoretest
 
 # from private-opstack/bridge-tutorial
 sdk.js

@@ -13,7 +13,7 @@ export default class FinalizeWorkCreator {
 
   constructor(
     logger: Logger,
-    queueSize: number,
+    queuePath: string,
     pollingInterval: number,
     logLevel: LogLevel,
     addressManagerAddress: string,
@@ -30,7 +30,7 @@ export default class FinalizeWorkCreator {
     this.logger = logger
 
     const workerData: WorkerInitData = {
-      queueSize,
+      queuePath,
       pollingInterval,
       logLevel,
       addressManagerAddress,
