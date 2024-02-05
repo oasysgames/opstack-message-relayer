@@ -99,10 +99,11 @@ export class MessageRelayerService extends BaseServiceV2<
     this.finalizeWorkerCreator = new FinalizeWorkCreator(
       this.logger,
       this.options.queuePath,
-      this.options.pollInterval,
+      this.options.loopIntervalMs,
       this.options.logLevel,
       this.options.addressManager,
       this.options.l1CrossDomainMessenger,
+      this.options.OutputOracle,
       this.options.portalAddress,
       l1RpcEndpoint,
       l1ChainId,

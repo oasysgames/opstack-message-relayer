@@ -19,7 +19,6 @@ export type MessageRelayerOptions = {
   // stateCommitmentChain?: string
   // canonicalTransactionChain?: string
   // bondManager?: string
-  pollInterval?: number
   receiptTimeout?: number
   gasMultiplier?: number
   depositConfirmationBlocks?: number
@@ -27,7 +26,7 @@ export type MessageRelayerOptions = {
   stateFilePath?: string
   // l2blockConfirmations?: number
   reorgSafetyDepth?: number
-  queuePath?: number
+  queuePath?: string
   finalizerPrivateKey: string
 }
 
@@ -96,11 +95,6 @@ export const serviceOptionsSpec: any = {
   //   validator: validators.str,
   //   desc: 'Address of the BondManager on Layer1.',
   // },
-  pollInterval: {
-    validator: validators.num,
-    desc: 'Polling interval of StateCommitmentChain (unit: msec).',
-    default: 1000,
-  },
   // receiptTimeout: {
   //   validator: validators.num,
   //   desc: 'Receipt wait timeout for relay transaction (unit: msec).',

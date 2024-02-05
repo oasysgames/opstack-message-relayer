@@ -24,12 +24,13 @@ export type FinalizerMessage = {
 
 export interface WorkerInitData {
   queuePath: string
-  pollingInterval: number
+  loopIntervalMs: number
   // for logger
   logLevel: LogLevel
   // for cross chain messenger
   addressManagerAddress: string
   l1CrossDomainMessengerAddress: string
+  outputOracleAddress: string
   l1RpcEndpoint: string
   l1ChainId: number
   l1BlockTimeSeconds: number
@@ -42,10 +43,11 @@ export interface WorkerInitData {
 
 const {
   queuePath,
-  pollingInterval,
+  loopIntervalMs,
   logLevel,
   addressManagerAddress,
   l1CrossDomainMessengerAddress,
+  outputOracleAddress,
   l1RpcEndpoint,
   l1ChainId,
   l1BlockTimeSeconds,
@@ -79,8 +81,8 @@ const messenger = new CrossChainMessenger({
       StateCommitmentChain: ZERO_ADDRESS, // dummy address
       CanonicalTransactionChain: ZERO_ADDRESS, // dummy address
       BondManager: ZERO_ADDRESS, // dummy address
-      OptimismPortal: ZERO_ADDRESS, // dummy address
-      L2OutputOracle: ZERO_ADDRESS, // dummy address
+      OptimismPortal: portalAddress,
+      L2OutputOracle: outputOracleAddress,
     },
     l2: DEFAULT_L2_CONTRACT_ADDRESSES,
   },
@@ -97,7 +99,7 @@ const messenger = new CrossChainMessenger({
 
 const finalizer = new Finalizer(
   queuePath,
-  pollingInterval,
+  loopIntervalMs,
   logger,
   messenger,
   new Portal(portalAddress, wallet, multicallTargetGas, gasMultiplier)
@@ -113,11 +115,10 @@ const finalizedHeightNotifyer = setInterval(() => {
   parentPort?.postMessage({
     highestFinalizedL2: finalizer.highestFinalizedL2,
   } as FinalizerMessage)
-}, pollingInterval)
+}, loopIntervalMs)
 
 // Receive the proven txhash
 parentPort?.on('message', (messages: L2toL1Message[]) => {
-  console.log('parentPort', messages)
   finalizer.appendMessage(...messages)
 })
 

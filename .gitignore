@@ -147,6 +147,9 @@ deployments
 state.test.json
 .queuestoretest
 
+# Store of finalizer queue
+.queuestore
+
 # from private-opstack/bridge-tutorial
 sdk.js
 

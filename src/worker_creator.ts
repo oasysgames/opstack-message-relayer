@@ -14,10 +14,11 @@ export default class FinalizeWorkCreator {
   constructor(
     logger: Logger,
     queuePath: string,
-    pollingInterval: number,
+    loopIntervalMs: number,
     logLevel: LogLevel,
     addressManagerAddress: string,
     l1CrossDomainMessengerAddress: string,
+    outputOracleAddress: string,
     portalAddress: string,
     l1RpcEndpoint: string,
     l1ChainId: number,
@@ -31,10 +32,11 @@ export default class FinalizeWorkCreator {
 
     const workerData: WorkerInitData = {
       queuePath,
-      pollingInterval,
+      loopIntervalMs,
       logLevel,
       addressManagerAddress,
       l1CrossDomainMessengerAddress,
+      outputOracleAddress,
       l1RpcEndpoint,
       l1ChainId,
       l1BlockTimeSeconds,
