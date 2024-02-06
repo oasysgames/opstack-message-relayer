@@ -41,7 +41,10 @@ export class MessageRelayerService extends BaseServiceV2<
       version: serviceVersion,
       options: {
         ...options,
-        loopIntervalMs: options?.loopIntervalMs ?? 5000,
+        // the default service main loop interval is 5 seconds
+        // NOTE: failed to set the default value by below
+        //       the value of `options` arugment is always `undefined`
+        // loopIntervalMs: options?.loopIntervalMs ?? 5000,
       },
       optionsSpec: serviceOptionsSpec,
       metricsSpec: serviseMetricsSpec,
@@ -75,13 +78,6 @@ export class MessageRelayerService extends BaseServiceV2<
       l2ChainId,
       depositConfirmationBlocks: this.options.depositConfirmationBlocks,
       l1BlockTimeSeconds: this.options.l1BlockTimeSeconds,
-      // bridges: {
-      //   Standard: {
-      //     Adapter: StandardBridgeAdapter,
-      //     l1Bridge: this.options.l1StandardBridge,
-      //     l2Bridge: this.options.l2StandardBridge,
-      //   },
-      // },
       contracts,
       bedrock: true,
     })
@@ -96,6 +92,9 @@ export class MessageRelayerService extends BaseServiceV2<
     const l1RpcEndpoint = (
       this.options.l1RpcProvider as providers.JsonRpcProvider
     ).connection.url
+    const l2RpcEndpoint = (
+      this.options.l2RpcProvider as providers.JsonRpcProvider
+    ).connection.url
     this.finalizeWorkerCreator = new FinalizeWorkCreator(
       this.logger,
       this.options.queuePath,
@@ -106,7 +105,9 @@ export class MessageRelayerService extends BaseServiceV2<
       this.options.OutputOracle,
       this.options.portalAddress,
       l1RpcEndpoint,
+      l2RpcEndpoint,
       l1ChainId,
+      l2ChainId,
       this.options.l1BlockTimeSeconds,
       this.options.finalizerPrivateKey,
       this.multicaller,
@@ -145,9 +146,9 @@ export class MessageRelayerService extends BaseServiceV2<
   async routes(router: ExpressRouter): Promise<void> {
     router.get('/status', async (req: any, res: any) => {
       return res.status(200).json({
-        highestKnownL2: this.state.highestKnownL2,
-        highestProvenL2: this.state.highestProvenL2,
-        highestFinalizedL2: this.state.highestFinalizedL2,
+        highestKnownL2: this.prover?.state.highestKnownL2,
+        highestProvenL2: this.prover?.state.highestProvenL2,
+        highestFinalizedL2: this.prover?.state.highestFinalizedL2,
       })
     })
   }

@@ -75,31 +75,6 @@ export const serviceOptionsSpec: any = {
     desc: 'Gas limit multiplier.',
     default: 1.1,
   },
-  // l1StandardBridge: {
-  //   validator: validators.str,
-  //   desc: 'Address of the Proxy__OVM_L1StandardBridge on Layer1.',
-  // },
-  // l2StandardBridge: {
-  //   validator: validators.str,
-  //   desc: 'Address of the L2StandardBridge on Layer2.',
-  // },
-  // stateCommitmentChain: {
-  //   validator: validators.str,
-  //   desc: 'Address of the StateCommitmentChain on Layer1.',
-  // },
-  // canonicalTransactionChain: {
-  //   validator: validators.str,
-  //   desc: 'Address of the CanonicalTransactionChain on Layer1.',
-  // },
-  // bondManager: {
-  //   validator: validators.str,
-  //   desc: 'Address of the BondManager on Layer1.',
-  // },
-  // receiptTimeout: {
-  //   validator: validators.num,
-  //   desc: 'Receipt wait timeout for relay transaction (unit: msec).',
-  //   default: 15000,
-  // },
   l1BlockTimeSeconds: {
     validator: validators.num,
     desc: 'Block time in seconds for the L1 chain.',
@@ -118,18 +93,13 @@ export const serviceOptionsSpec: any = {
   stateFilePath: {
     validator: validators.str,
     desc: 'the file of state file whitch holds the last state',
-    default: '~/.message-relayer/state.json',
+    default: './state.json',
   },
   fromL2TransactionIndex: {
     validator: validators.num,
     desc: 'Index of the first L2 transaction to start processing from.',
     default: 0,
   },
-  // l2blockConfirmations: {
-  //   validator: validators.num,
-  //   desc: 'Number of blocks to wait before checking for new messages',
-  //   default: 8,
-  // },
   queuePath: {
     validator: validators.str,
     desc: 'Number of messages to queue before rejecting new messages',

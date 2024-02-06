@@ -22,13 +22,14 @@ export default class FinalizeWorkCreator {
     outputOracleAddress: string,
     portalAddress: string,
     l1RpcEndpoint: string,
+    l2RpcEndpoint: string,
     l1ChainId: number,
+    l2ChainId: number,
     l1BlockTimeSeconds: number,
     finalizerPrivateKey: string,
     multicaller: Multicaller,
     messageHandler: (message: FinalizerMessage) => void,
-    exitHandler: (code: number) => void,
-    isTest: boolean = false
+    exitHandler: (code: number) => void
   ) {
     this.logger = logger
 
@@ -40,7 +41,9 @@ export default class FinalizeWorkCreator {
       l1CrossDomainMessengerAddress,
       outputOracleAddress,
       l1RpcEndpoint,
+      l2RpcEndpoint,
       l1ChainId,
+      l2ChainId,
       l1BlockTimeSeconds,
       finalizerPrivateKey,
       portalAddress,

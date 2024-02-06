@@ -9,13 +9,16 @@ import {
 import Finalizer from './finalizer'
 import { Portal } from './portal'
 import { ZERO_ADDRESS } from './utils'
-// import { MockCrossChain } from '../test/mocks'
-// import Counter from './contracts/Counter.json'
 
 export type L2toL1Message = {
   blockHeight: number
   txHash: string
   message: CrossChainMessage
+}
+
+export type CloseMessage = {
+  type: 'close'
+  message: string
 }
 
 export type FinalizerMessage = {
@@ -25,14 +28,14 @@ export type FinalizerMessage = {
 export interface WorkerInitData {
   queuePath: string
   loopIntervalMs: number
-  // for logger
-  logLevel: LogLevel
-  // for cross chain messenger
-  addressManagerAddress: string
+  logLevel: LogLevel // for logger
+  addressManagerAddress: string // for cross chain messenger
   l1CrossDomainMessengerAddress: string
   outputOracleAddress: string
   l1RpcEndpoint: string
+  l2RpcEndpoint: string
   l1ChainId: number
+  l2ChainId: number
   l1BlockTimeSeconds: number
   finalizerPrivateKey: string
   // for portal
@@ -49,7 +52,9 @@ const {
   l1CrossDomainMessengerAddress,
   outputOracleAddress,
   l1RpcEndpoint,
+  l2RpcEndpoint,
   l1ChainId,
+  l2ChainId,
   l1BlockTimeSeconds,
   finalizerPrivateKey,
   portalAddress,
@@ -69,9 +74,9 @@ const wallet = new ethers.Wallet(finalizerPrivateKey, provider)
 
 const messenger = new CrossChainMessenger({
   l1SignerOrProvider: wallet,
-  l2SignerOrProvider: wallet, // dummy
+  l2SignerOrProvider: new ethers.providers.JsonRpcProvider(l2RpcEndpoint),
   l1ChainId,
-  l2ChainId: 0, // dummy
+  l2ChainId,
   l1BlockTimeSeconds,
   contracts: {
     l1: {
@@ -88,14 +93,6 @@ const messenger = new CrossChainMessenger({
   },
   bedrock: true,
 })
-
-// if (isTest) {
-//   // @ts-ignore
-//   messenger = new MockCrossChain()
-//   const contract = new Contract(l1CrossDomainMessengerAddress, Counter.abi, wallet)
-//   // @ts-ignore
-//   messenger.init(contract)
-// }
 
 const finalizer = new Finalizer(
   queuePath,
@@ -117,13 +114,26 @@ const finalizedHeightNotifyer = setInterval(() => {
   } as FinalizerMessage)
 }, loopIntervalMs)
 
-// Receive the proven txhash
-parentPort?.on('message', (messages: L2toL1Message[]) => {
-  finalizer.appendMessage(...messages)
+// Receive the proven txhash or close message from main thread
+parentPort?.on('message', (messages: L2toL1Message[] | CloseMessage) => {
+  if (messages instanceof Array) {
+    // messages is L2toL1Message if it is an array
+    finalizer.appendMessage(...messages)
+  } else {
+    // otherwise messages is CloseMessage
+    stop()
+  }
 })
 
+// Stop finalizer when main thread is closed
+// NOTE: This close evet is not called when worker terminate is called
+//       Thus we need CloseMessage to stop finalizer
+parentPort.on('close', () => stop())
+
 // Stop finalizer
-parentPort.on('close', () => {
-  finalizer.stop()
+const stop = async () => {
+  logger.info('[finalize worker] stopping...')
   clearInterval(finalizedHeightNotifyer)
-})
+  await finalizer.stop()
+  logger.info('[finalize worker] stopped')
+}
