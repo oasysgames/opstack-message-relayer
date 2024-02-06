@@ -13,4 +13,7 @@ curl http://127.0.0.1:7300/healthz | jq
 
 # show status
 curl http://127.0.0.1:7300/api/status | jq
+
+# Metrics
+curl http://127.0.0.1:7300/metrics
 ```

@@ -23,6 +23,7 @@ export type CloseMessage = {
 
 export type FinalizerMessage = {
   highestFinalizedL2: number
+  finalizedTxs: number
 }
 
 export interface WorkerInitData {
@@ -99,20 +100,14 @@ const finalizer = new Finalizer(
   loopIntervalMs,
   logger,
   messenger,
-  new Portal(portalAddress, wallet, multicallTargetGas, gasMultiplier)
+  new Portal(portalAddress, wallet, multicallTargetGas, gasMultiplier),
+  (msg: FinalizerMessage) => {
+    parentPort?.postMessage(msg)
+  }
 )
 
 // Start finalizer
 finalizer.start()
-
-// Notify finalized height to main thread
-const lastFinalizedL2 = finalizer.highestFinalizedL2
-const finalizedHeightNotifyer = setInterval(() => {
-  if (finalizer.highestFinalizedL2 === lastFinalizedL2) return
-  parentPort?.postMessage({
-    highestFinalizedL2: finalizer.highestFinalizedL2,
-  } as FinalizerMessage)
-}, loopIntervalMs)
 
 // Receive the proven txhash or close message from main thread
 parentPort?.on('message', (messages: L2toL1Message[] | CloseMessage) => {
@@ -133,7 +128,6 @@ parentPort.on('close', () => stop())
 // Stop finalizer
 const stop = async () => {
   logger.info('[finalize worker] stopping...')
-  clearInterval(finalizedHeightNotifyer)
   await finalizer.stop()
   logger.info('[finalize worker] stopped')
 }

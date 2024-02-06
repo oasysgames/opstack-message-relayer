@@ -11,6 +11,7 @@ import { Multicaller } from './multicaller'
 export default class FinalizeWorkCreator {
   private worker: Worker
   private logger: Logger
+  private terminating = false
 
   constructor(
     logger: Logger,
@@ -65,6 +66,7 @@ export default class FinalizeWorkCreator {
     })
 
     this.worker.on('exit', (code: number) => {
+      if (this.terminating) return
       if (code !== 0) {
         this.logger.error(`[worker] worker stopped with exit code: ${code}`)
       }
@@ -73,6 +75,7 @@ export default class FinalizeWorkCreator {
   }
 
   terminate() {
+    this.terminating = true
     this.worker.terminate()
   }
 

@@ -37,7 +37,14 @@ describe('Finalizer', function () {
     messenger.init(portalContract)
     const logger = new MockLogger()
     // @ts-ignore
-    const finalizer = new Finalizer('', 100, logger, messenger, portal)
+    const finalizer = new Finalizer(
+      '',
+      100,
+      logger,
+      messenger,
+      portal,
+      () => {}
+    )
     finalizer.start()
 
     return {

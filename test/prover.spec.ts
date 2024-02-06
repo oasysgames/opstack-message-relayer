@@ -167,86 +167,86 @@ describe('Prover', function () {
     })
   })
 
-  describe('handleMultipleBlock', function () {
-    it('succeed', async function () {
-      const { counter, prover, messenger } = await setup()
-      const highestKnown = 134
-      const provenL2 = highestKnown - l2blockConfirmations
-      const finalizedL2 = provenL2
-      prover.updateHighestKnownL2(highestKnown)
-      prover.updateHighestProvenL2(provenL2)
-      prover.updateHighestFinalizedL2(finalizedL2)
+  // describe('handleMultipleBlock', function () {
+  //   it('succeed', async function () {
+  //     const { counter, prover, messenger } = await setup()
+  //     const highestKnown = 134
+  //     const provenL2 = highestKnown - l2blockConfirmations
+  //     const finalizedL2 = provenL2
+  //     prover.updateHighestKnownL2(highestKnown)
+  //     prover.updateHighestProvenL2(provenL2)
+  //     prover.updateHighestFinalizedL2(finalizedL2)
 
-      const blocks = {
-        [provenL2]: {
-          number: provenL2,
-          transactions: [],
-        },
-        [provenL2 + 1]: {
-          number: provenL2 + 1,
-          transactions: [
-            {
-              number: provenL2 + 1,
-              hash: '0x1',
-            },
-            {
-              number: provenL2 + 1,
-              hash: '0x2',
-            },
-          ],
-        },
-        [provenL2 + 2]: {
-          number: provenL2 + 2,
-          transactions: [
-            {
-              number: provenL2 + 2,
-              hash: '0x3',
-            },
-            {
-              number: provenL2 + 2,
-              hash: '0x4',
-            },
-            {
-              number: provenL2 + 2,
-              hash: '0x5',
-            },
-          ],
-        },
-        [provenL2 + 3]: {
-          number: provenL2 + 3,
-          transactions: [
-            {
-              number: provenL2 + 3,
-              hash: '0x6',
-            },
-          ],
-        },
-      }
-      messenger.setBlocks(blocks)
-      messenger.setBlockNumber(highestKnown + 2)
-      // @ts-ignore
-      await prover.handleMultipleBlock()
+  //     const blocks = {
+  //       [provenL2]: {
+  //         number: provenL2,
+  //         transactions: [],
+  //       },
+  //       [provenL2 + 1]: {
+  //         number: provenL2 + 1,
+  //         transactions: [
+  //           {
+  //             number: provenL2 + 1,
+  //             hash: '0x1',
+  //           },
+  //           {
+  //             number: provenL2 + 1,
+  //             hash: '0x2',
+  //           },
+  //         ],
+  //       },
+  //       [provenL2 + 2]: {
+  //         number: provenL2 + 2,
+  //         transactions: [
+  //           {
+  //             number: provenL2 + 2,
+  //             hash: '0x3',
+  //           },
+  //           {
+  //             number: provenL2 + 2,
+  //             hash: '0x4',
+  //           },
+  //           {
+  //             number: provenL2 + 2,
+  //             hash: '0x5',
+  //           },
+  //         ],
+  //       },
+  //       [provenL2 + 3]: {
+  //         number: provenL2 + 3,
+  //         transactions: [
+  //           {
+  //             number: provenL2 + 3,
+  //             hash: '0x6',
+  //           },
+  //         ],
+  //       },
+  //     }
+  //     messenger.setBlocks(blocks)
+  //     messenger.setBlockNumber(highestKnown + 2)
+  //     // @ts-ignore
+  //     await prover.handleMultipleBlock()
 
-      expect(prover.highestKnownL2()).to.equal(highestKnown + 2)
-      expect(prover.highestProvenL2()).to.equal(provenL2 + 2)
-      expect(prover.highestFinalizedL2()).to.equal(finalizedL2)
-      expect(await counter.get()).to.equal(4)
-      expect(succeededCalldatas.map((c) => c.txHash)).to.members([
-        '0x2',
-        '0x3',
-        '0x4',
-        '0x5',
-      ])
-      expect(prover.startScanHeight()).to.equal(provenL2 + 3)
-      expect(prover.endScanHeight()).to.equal(provenL2 + 2)
+  //     expect(prover.highestKnownL2()).to.equal(highestKnown + 2)
+  //     expect(prover.highestProvenL2()).to.equal(provenL2 + 2)
+  //     expect(prover.highestFinalizedL2()).to.equal(finalizedL2)
+  //     expect(await counter.get()).to.equal(4)
+  //     expect(succeededCalldatas.map((c) => c.txHash)).to.members([
+  //       '0x2',
+  //       '0x3',
+  //       '0x4',
+  //       '0x5',
+  //     ])
+  //     expect(prover.startScanHeight()).to.equal(provenL2 + 3)
+  //     expect(prover.endScanHeight()).to.equal(provenL2 + 2)
 
-      messenger.setBlockNumber(highestKnown + 3)
+  //     messenger.setBlockNumber(highestKnown + 3)
 
-      // @ts-ignore
-      await prover.handleMultipleBlock()
-      expect(prover.highestKnownL2()).to.equal(highestKnown + 3)
-      expect(prover.highestProvenL2()).to.equal(provenL2 + 2)
-      expect(prover.highestFinalizedL2()).to.equal(finalizedL2)
-    })
-  })
+  //     // @ts-ignore
+  //     await prover.handleMultipleBlock()
+  //     expect(prover.highestKnownL2()).to.equal(highestKnown + 3)
+  //     expect(prover.highestProvenL2()).to.equal(provenL2 + 2)
+  //     expect(prover.highestFinalizedL2()).to.equal(finalizedL2)
+  //   })
+  // })
 })

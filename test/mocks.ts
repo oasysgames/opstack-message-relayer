@@ -129,11 +129,6 @@ export class MockLogger {
 }
 
 export class MockMetrics {
-  public numRelayedMessages: {
-    inc: () => void
-  } = {
-    inc: () => {},
-  }
   public highestKnownL2: {
     set: (val: number) => void
   } = {
@@ -148,5 +143,15 @@ export class MockMetrics {
     set: (val: number) => void
   } = {
     set: (val: number) => {},
+  }
+  public numProvenMessages: {
+    inc: () => void
+  } = {
+    inc: () => {},
+  }
+  public numFinalizedMessages: {
+    inc: () => void
+  } = {
+    inc: () => {},
   }
 }

@@ -111,8 +111,10 @@ export class MessageRelayerService extends BaseServiceV2<
       this.options.l1BlockTimeSeconds,
       this.options.finalizerPrivateKey,
       this.multicaller,
-      (message: FinalizerMessage) =>
-        this.prover?.updateHighestFinalizedL2(message.highestFinalizedL2),
+      (message: FinalizerMessage) => {
+        this.prover?.updateHighestFinalizedL2(message.highestFinalizedL2)
+        this.metrics.numFinalizedMessages.inc(message.finalizedTxs)
+      },
       (code: number) => {
         this.logger.error(`[service] worker exit with code: ${code}`)
         this.stop()
@@ -163,19 +165,30 @@ export class MessageRelayerService extends BaseServiceV2<
       `[service] writing state to ${this.options.stateFilePath}. state:`,
       this.prover?.state
     )
-    await super.stop()
     await this.prover.writeState()
+    // stop the main loop
+    await super.stop()
+    // forth to terminate the finalize worker after loopIntervalMs
+    let workerTerminated = false
+    setTimeout(() => {
+      this.finalizeWorkerCreator?.terminate()
+      workerTerminated = true
+    }, this.loopIntervalMs)
     // post close message to finalize worker
     this.finalizeWorkerCreator?.postMessage({
       type: 'close',
       message: 'service request to close',
     })
-    // wait for a while until the finalize worker is terminated
+    // wait until the finalize worker is terminated
     this.logger.info(
       `[service] wait for a while(${this.loopIntervalMs}ms) until the finalize worker is terminated`
     )
-    await sleep(this.loopIntervalMs)
-    await this.finalizeWorkerCreator?.terminate()
+    const waitForStopped = async () => {
+      while (!workerTerminated) {
+        await new Promise((resolve) => setTimeout(resolve, 100))
+      }
+    }
+    await waitForStopped()
   }
 }
 

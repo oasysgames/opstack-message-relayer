@@ -4,7 +4,8 @@ export type MessageRelayerMetrics = {
   highestKnownL2: Gauge
   highestProvenL2: Gauge
   highestFinalizedL2: Gauge
-  numRelayedMessages: Counter
+  numProvenMessages: Counter
+  numFinalizedMessages: Counter
 }
 
 export type MessageRelayerState = {

@@ -4,6 +4,7 @@ import DynamicSizeQueue from './queue-storage'
 import FixedSizeQueue from './queue-mem'
 import { Portal, WithdrawMsgWithMeta } from './portal'
 import { L2toL1Message } from './finalize_worker'
+import { FinalizerMessage } from './finalize_worker'
 
 export default class Finalizer {
   public highestFinalizedL2: number = 0
@@ -15,13 +16,15 @@ export default class Finalizer {
   private loopIntervalMs: number
   private logger: Logger
   private messenger: CrossChainMessenger
+  private finalizedNotifyer: (msg: FinalizerMessage) => void
 
   constructor(
     queuePath: string,
     loopIntervalMs: number,
     logger: Logger,
     messenger: CrossChainMessenger,
-    portal: Portal
+    portal: Portal,
+    notifyer: (msg: FinalizerMessage) => void
   ) {
     logger.info(`[finalizer] queuePath: ${queuePath}`)
     if (queuePath !== '') {
@@ -33,6 +36,7 @@ export default class Finalizer {
     this.logger = logger
     this.messenger = messenger
     this.portal = portal
+    this.finalizedNotifyer = notifyer
   }
 
   public async start(): Promise<void> {
@@ -136,7 +140,14 @@ export default class Finalizer {
         )}`
       )
       // update the highest finalized L2
-      this.updateHighestFinalized(succeeds)
+      if (this.updateHighestFinalized(succeeds)) {
+        // notify the highest finalized L2 along with
+        // the number of finalized transactions to the parent thread
+        this.finalizedNotifyer({
+          highestFinalizedL2: this.highestFinalizedL2,
+          finalizedTxs: succeeds.length,
+        })
+      }
     }
 
     // log the failed list with each error message

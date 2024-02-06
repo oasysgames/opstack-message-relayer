@@ -239,7 +239,7 @@ export default class Prover {
       )
       // update the highest checked L2 height
       if (this.updateHighestCheckedL2(succeeds)) {
-        this.metrics.numRelayedMessages.inc(succeeds.length)
+        this.metrics.numProvenMessages.inc(succeeds.length)
       }
       // post the proven messages to the finalizer
       this.postMessage(succeeds)
@@ -254,17 +254,22 @@ export default class Prover {
   }
 
   public startScanHeight(): number {
-    // TODO: comment in
-    // if (this.initalIteration) {
-    //   // iterate block from the highest finalized at the start of the service
-    //   this.initalIteration = false
-    //   return this.state.highestFinalizedL2
-    // }
+    if (this.initalIteration) {
+      this.initalIteration = false
+      // To begin scanning from a sufficiently early point
+      // we use the L2 state submission interval as the specific prior number.
+      const l2stateSubmissionInterval = 120
+      const start = this.state.highestProvenL2 - l2stateSubmissionInterval
+      return start < 0 ? 0 : start
+      // iterate block from the highest finalized at the start of the service
+      // return this.state.highestFinalizedL2
+    }
     return this.state.highestProvenL2 + 1
   }
 
   public endScanHeight(): number {
-    return this.state.highestKnownL2 - this.l2blockConfirmations
+    const start = this.state.highestKnownL2 - this.l2blockConfirmations
+    return start < 0 ? 0 : start
   }
 
   protected updateHighestCheckedL2(calldatas: CallWithMeta[]): boolean {

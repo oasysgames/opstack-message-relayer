@@ -124,8 +124,12 @@ export const serviseMetricsSpec: any = {
     type: Gauge,
     desc: 'Highest L2 tx that has been finalized',
   },
-  numRelayedMessages: {
+  numProvenMessages: {
     type: Counter,
-    desc: 'Number of messages relayed by the service',
+    desc: 'Number of messages proven by the service',
+  },
+  numFinalizedMessages: {
+    type: Counter,
+    desc: 'Number of messages finalized by the service',
   },
 }
