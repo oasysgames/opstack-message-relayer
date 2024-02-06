@@ -9,7 +9,8 @@ import { readFromFile, writeToFile } from './utils'
 import { MessageRelayerMetrics, MessageRelayerState } from './service_types'
 
 export default class Prover {
-  private state: MessageRelayerState
+  public state: MessageRelayerState
+
   private metrics: MessageRelayerMetrics & StandardMetrics
   private logger: Logger
   private stateFilePath: string

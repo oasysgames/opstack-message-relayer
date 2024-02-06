@@ -1,12 +1,13 @@
 import { LocalStorage } from 'node-localstorage'
 import { createHash } from 'crypto'
+import { BigNumber } from 'ethers'
 
+// The queue design is linked list
 export default class DynamicSizeQueue<T> {
   public count: number = 0
   public tailKey: string
+  public storage: LocalStorage
 
-  // Linked list
-  private storage: LocalStorage
   private rootKey = 'queue-storage-root-key'
 
   constructor(path: string, ...initialElements: T[]) {
@@ -14,7 +15,7 @@ export default class DynamicSizeQueue<T> {
     this.loadInitalState()
     // Enqueue initial elements
     for (const element of initialElements) {
-      this.enqueue(element as object)
+      this.enqueue(element)
     }
   }
 
@@ -28,7 +29,7 @@ export default class DynamicSizeQueue<T> {
         this.count = total
         return total
       }
-      key = this.generateKey(JSON.parse(data))
+      key = this.generateKey(this.deserialize(data))
       total++
     }
   }
@@ -43,13 +44,14 @@ export default class DynamicSizeQueue<T> {
     this.tailKey = ''
   }
 
-  enqueue<T extends object>(...items: T[]): void {
+  enqueue(...items: T[]): void {
     for (const item of items) {
-      const data = JSON.stringify(item)
-      // set the root key if the queue is empty
+      const data = this.serialize(item)
       if (this.isEmpty() || this.tailKey === '') {
+        // set the root key if the queue is empty
         this.storage.setItem(this.rootKey, data)
       } else {
+        // append the data to the tail key
         this.storage.setItem(this.tailKey, data)
       }
       // update the tail key
@@ -64,12 +66,17 @@ export default class DynamicSizeQueue<T> {
       throw new Error('Queue is empty')
     }
     // get the item from the root key
-    const item = JSON.parse(this.storage.getItem(this.rootKey))
+    const item = this.deserialize(this.storage.getItem(this.rootKey))
     // extract item
     const nextKey = this.generateKey(item)
     const nextItem = this.storage.getItem(nextKey)
-    // store next item to root
-    this.storage.setItem(this.rootKey, nextItem)
+    if (nextItem === null) {
+      // delete the root key if the queue is empty
+      this.storage.removeItem(this.rootKey)
+    } else {
+      // store next item to root
+      this.storage.setItem(this.rootKey, nextItem)
+    }
     // remove the old data
     this.storage.removeItem(nextKey)
     // decrement count
@@ -77,19 +84,45 @@ export default class DynamicSizeQueue<T> {
     return item
   }
 
-  generateKey(data: object): string {
+  generateKey(data: T): string {
     // assign the txHash as the tail key if it exists
     // otherwise, use the sha256 hash of the data
-    return 'txHash' in data
+    return 'txHash' in (data as object)
       ? (data['txHash'] as string)
-      : this.sha256(JSON.stringify(data)) || ''
+      : this.sha256(this.serialize(data)) || ''
   }
 
-  peek(): T | null {
+  peek(): T {
     if (this.isEmpty()) {
       throw new Error('Queue is empty')
     }
-    return JSON.parse(this.storage.getItem(this.rootKey))
+    return this.deserialize(this.storage.getItem(this.rootKey))
+  }
+
+  serialize(item: T): string {
+    return JSON.stringify(item, (key, value) => {
+      if (
+        BigNumber.isBigNumber(value) ||
+        (value.type && value.type === 'BigNumber')
+      ) {
+        return value.hex ? value.hex : value._hex
+      } else {
+        return value
+      }
+    })
+  }
+
+  deserialize(data: string): T {
+    return JSON.parse(data, (key, value) => {
+      if (
+        value &&
+        (key === 'messageNonce' || key === 'minGasLimit' || key === 'value')
+      ) {
+        return BigNumber.from(value)
+      } else {
+        return value
+      }
+    })
   }
 
   sha256(data: string): string {

@@ -22,7 +22,7 @@ import FinalizeWorkCreator from './worker_creator'
 import { FinalizerMessage, L2toL1Message } from './finalize_worker'
 import { MessageRelayerMetrics, MessageRelayerState } from './service_types'
 import Prover from './prover'
-import { ZERO_ADDRESS } from './utils'
+import { ZERO_ADDRESS, sleep } from './utils'
 
 export class MessageRelayerService extends BaseServiceV2<
   MessageRelayerOptions,
@@ -49,7 +49,7 @@ export class MessageRelayerService extends BaseServiceV2<
   }
 
   protected async init(): Promise<void> {
-    this.logger.info('startup options', this.options)
+    this.logger.info('[service] startup options', this.options)
 
     this.wallet = this.options.l1Wallet.connect(this.options.l1RpcProvider)
     const contracts: DeepPartial<OEContractsLike> = {
@@ -111,9 +111,22 @@ export class MessageRelayerService extends BaseServiceV2<
       this.options.finalizerPrivateKey,
       this.multicaller,
       (message: FinalizerMessage) =>
-        this.prover?.updateHighestFinalizedL2(message.highestFinalizedL2)
+        this.prover?.updateHighestFinalizedL2(message.highestFinalizedL2),
+      (code: number) => {
+        this.logger.error(`[service] worker exit with code: ${code}`)
+        this.stop()
+      }
     )
 
+    const toMessages = (calls: CallWithMeta[]): L2toL1Message[] => {
+      return calls.map((call) => {
+        return {
+          message: call.message,
+          txHash: call.txHash,
+          blockHeight: call.blockHeight,
+        }
+      })
+    }
     this.prover = new Prover(
       this.metrics,
       this.logger,
@@ -123,16 +136,8 @@ export class MessageRelayerService extends BaseServiceV2<
       this.options.reorgSafetyDepth,
       this.messenger,
       this.multicaller,
-      (succeeds: CallWithMeta[]) => {
-        const messages: L2toL1Message[] = succeeds.map((call) => {
-          return {
-            message: call.message,
-            txHash: call.txHash,
-            blockHeight: call.blockHeight,
-          }
-        })
-        this.finalizeWorkerCreator?.postMessage(messages)
-      }
+      (succeeds: CallWithMeta[]) =>
+        this.finalizeWorkerCreator?.postMessage(toMessages(succeeds))
     )
     await this.prover.init()
   }
@@ -153,9 +158,23 @@ export class MessageRelayerService extends BaseServiceV2<
 
   // override to write the last state
   public async stop(): Promise<void> {
-    await this.prover.writeState()
-    this.finalizeWorkerCreator?.terminate()
+    this.logger.info(
+      `[service] writing state to ${this.options.stateFilePath}. state:`,
+      this.prover?.state
+    )
     await super.stop()
+    await this.prover.writeState()
+    // post close message to finalize worker
+    this.finalizeWorkerCreator?.postMessage({
+      type: 'close',
+      message: 'service request to close',
+    })
+    // wait for a while until the finalize worker is terminated
+    this.logger.info(
+      `[service] wait for a while(${this.loopIntervalMs}ms) until the finalize worker is terminated`
+    )
+    await sleep(this.loopIntervalMs)
+    await this.finalizeWorkerCreator?.terminate()
   }
 }
 

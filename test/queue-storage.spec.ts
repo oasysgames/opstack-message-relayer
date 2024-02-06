@@ -1,5 +1,7 @@
 import { expect } from 'chai'
 import DynamicSizeQueue from '../src/queue-storage'
+import { L2toL1Message } from '../src/finalize_worker'
+import { BigNumber } from 'ethers'
 
 export type TestMessage = {
   txHash: string
@@ -90,6 +92,33 @@ describe('FixedSizeQueue', function () {
       expect(queue.tailKey).to.equal('0x5')
 
       queue.reset()
+    })
+  })
+
+  describe('serialize/deserialize', function () {
+    it('succeed', async function () {
+      const queue = new DynamicSizeQueue<L2toL1Message>(queuePath)
+      const message: L2toL1Message = {
+        blockHeight: 1,
+        txHash: '0x1',
+        message: {
+          direction: 1,
+          logIndex: 1,
+          blockNumber: 1,
+          transactionHash: '0x',
+          sender: 'sender',
+          target: 'target',
+          message: 'message',
+          messageNonce: BigNumber.from('123'),
+          value: BigNumber.from('1000000000000000000'),
+          minGasLimit: BigNumber.from('3000000000'),
+        },
+      }
+
+      const serialized = queue.serialize(message)
+      const deserialized = queue.deserialize(serialized)
+
+      expect(deserialized).to.deep.equal(message)
     })
   })
 })

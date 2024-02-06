@@ -3,6 +3,7 @@ import { Logger, LogLevel } from '@eth-optimism/common-ts'
 import {
   FinalizerMessage,
   L2toL1Message,
+  CloseMessage,
   WorkerInitData,
 } from './finalize_worker'
 import { Multicaller } from './multicaller'
@@ -26,6 +27,7 @@ export default class FinalizeWorkCreator {
     finalizerPrivateKey: string,
     multicaller: Multicaller,
     messageHandler: (message: FinalizerMessage) => void,
+    exitHandler: (code: number) => void,
     isTest: boolean = false
   ) {
     this.logger = logger
@@ -54,13 +56,16 @@ export default class FinalizeWorkCreator {
     })
 
     this.worker.on('error', (err: Error) => {
-      this.logger.error(`[worker] worker error: ${err.message}`)
+      this.logger.error(
+        `[worker] worker error: ${err.message}, stack: ${err.stack}`
+      )
     })
 
     this.worker.on('exit', (code: number) => {
       if (code !== 0) {
         this.logger.error(`[worker] worker stopped with exit code: ${code}`)
       }
+      exitHandler(code)
     })
   }
 
@@ -68,8 +73,15 @@ export default class FinalizeWorkCreator {
     this.worker.terminate()
   }
 
-  postMessage(messages: L2toL1Message[]) {
-    this.logger.info(`[worker] posting messages: ${messages.length}`)
-    this.worker.postMessage(messages)
+  postMessage(messages: L2toL1Message[] | CloseMessage) {
+    if (messages instanceof Array) {
+      // messages is L2toL1Message if it is an array
+      this.logger.info(`[worker] posting messages: ${messages.length}`)
+      this.worker.postMessage(messages as L2toL1Message[])
+    } else {
+      // otherwise messages is CloseMessage
+      this.logger.info(`[worker] posting close message: ${messages.message}`)
+      this.worker.postMessage(messages as CloseMessage)
+    }
   }
 }

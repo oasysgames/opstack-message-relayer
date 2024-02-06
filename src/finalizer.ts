@@ -8,40 +8,39 @@ import { L2toL1Message } from './finalize_worker'
 export default class Finalizer {
   public highestFinalizedL2: number = 0
   public queue: DynamicSizeQueue<L2toL1Message> | FixedSizeQueue<L2toL1Message>
+  public portal: Portal
+  public running: boolean
 
-  public stopping: boolean = false
-  public stopped: boolean = false
-
-  private pollingInterval: number
+  private pollingTimeout: NodeJS.Timeout
+  private loopIntervalMs: number
   private logger: Logger
   private messenger: CrossChainMessenger
-  public portal: Portal
 
   constructor(
     queuePath: string,
-    pollingInterval: number,
+    loopIntervalMs: number,
     logger: Logger,
     messenger: CrossChainMessenger,
     portal: Portal
   ) {
+    logger.info(`[finalizer] queuePath: ${queuePath}`)
     if (queuePath !== '') {
       this.queue = new DynamicSizeQueue<L2toL1Message>(queuePath)
     } else {
       this.queue = new FixedSizeQueue<L2toL1Message>(1024)
     }
-    this.pollingInterval = pollingInterval
+    this.loopIntervalMs = loopIntervalMs
     this.logger = logger
     this.messenger = messenger
     this.portal = portal
   }
 
   public async start(): Promise<void> {
-    const itr = async () => {
-      if (this.stopping) {
-        this.stopped = true
-        return
-      }
+    this.logger.info(
+      `[finalizer] starting..., loopIntervalMs: ${this.loopIntervalMs}ms`
+    )
 
+    const itr = async () => {
       let withdraws: WithdrawMsgWithMeta[] = []
 
       // traverse the queue
@@ -54,8 +53,8 @@ export default class Finalizer {
         // still in challenge period
         if (status < MessageStatus.READY_FOR_RELAY) {
           // the head in queue is the oldest message, so we assume the rest of the queue is also in challenge period
-          this.logger.debug(
-            `[finalizer] message ${message} is still in challenge period, txhash: ${txHash}, blockHeight: ${head.blockHeight}`
+          this.logger.info(
+            `[finalizer] message is still in challenge period, txhash: ${txHash}, blockHeight: ${head.blockHeight}, status: ${status}`
           )
           break
         }
@@ -90,7 +89,7 @@ export default class Finalizer {
         }
 
         // go next when lower than multicall target gas and if not stopping
-        if (!this.portal?.isOverTargetGas(withdraws.length) && !this.stopping) {
+        if (!this.portal?.isOverTargetGas(withdraws.length) && this.running) {
           continue
         }
 
@@ -113,10 +112,13 @@ export default class Finalizer {
       }
 
       // recursive call
-      setTimeout(itr, this.pollingInterval)
+      if (this.running) {
+        this.pollingTimeout = setTimeout(itr, this.loopIntervalMs)
+      }
     }
 
     // first call
+    this.running = true
     itr()
   }
 
@@ -146,15 +148,9 @@ export default class Finalizer {
   }
 
   public async stop(): Promise<void> {
-    this.logger.debug(`[finalizer] stopping...`)
-    this.stopping = true
-    const waitForStopped = async () => {
-      while (!this.stopped) {
-        await new Promise((resolve) => setTimeout(resolve, 100))
-      }
-    }
-    await waitForStopped()
-    this.logger.debug(`[finalizer] stopped`)
+    this.logger.info(`[finalizer] stopping...`)
+    this.running = false
+    clearTimeout(this.pollingTimeout)
   }
 
   public appendMessage(...messages: L2toL1Message[]): void {
