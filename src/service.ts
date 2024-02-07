@@ -166,8 +166,6 @@ export class MessageRelayerService extends BaseServiceV2<
       this.prover?.state
     )
     await this.prover.writeState()
-    // stop the main loop
-    await super.stop()
     // forth to terminate the finalize worker after loopIntervalMs
     let workerTerminated = false
     setTimeout(() => {
@@ -179,6 +177,8 @@ export class MessageRelayerService extends BaseServiceV2<
       type: 'close',
       message: 'service request to close',
     })
+    // stop the main loop
+    await super.stop()
     // wait until the finalize worker is terminated
     this.logger.info(
       `[service] wait for a while(${this.loopIntervalMs}ms) until the finalize worker is terminated`

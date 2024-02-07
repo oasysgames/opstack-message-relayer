@@ -171,7 +171,7 @@ export default class Finalizer {
     //     `will exceed queue size, please increase queue size (current: ${this.queue.size})`
     //   )
     // }
-    this.queue.enqueue(...messages)
+    this.queue.enqueueNoDuplicate(...messages)
     this.logger.debug(
       `[finalizer] received txhashes: ${messages.map((m) => m.txHash)}`
     )

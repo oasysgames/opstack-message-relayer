@@ -38,6 +38,18 @@ export default class FixedSizeQueue<T> {
     }
   }
 
+  // NOTE: doesn't supporting
+  enqueueNoDuplicate(...items: T[]): void {
+    for (const item of items) {
+      if (this.isFull()) {
+        throw new Error('Queue is full')
+      }
+      this.rear = (this.rear + 1) % this.size
+      this.queue[this.rear] = item
+      this.count++
+    }
+  }
+
   dequeue(): T {
     if (this.isEmpty()) {
       throw new Error('Queue is empty')

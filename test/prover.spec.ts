@@ -160,6 +160,7 @@ describe('Prover', function () {
       expect(prover.highestProvenL2()).to.equal(height)
       expect(await counter.get()).to.equal(3)
       expect(succeededCalldatas.map((c) => c.txHash)).to.members([
+        '0x3',
         '0x1',
         '0x2',
         '0x4',

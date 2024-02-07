@@ -36,9 +36,18 @@ describe('FixedSizeQueue', function () {
         { txHash: '0x6' },
         { txHash: '0x7' },
         { txHash: '0x8' },
-        { txHash: '0x9' },
-        { txHash: '0x10' }
+        { txHash: '0x9' }
       )
+      expect(queue.count).to.equal(9)
+      expect(queue.tailKey).to.equal('0x9')
+
+      // enqueue no duplicate
+      queue.enqueueNoDuplicate(
+        { txHash: '0x1' },
+        { txHash: '0x10' },
+        { txHash: '0x4' }
+      )
+
       expect(queue.count).to.equal(10)
       expect(queue.tailKey).to.equal('0x10')
 

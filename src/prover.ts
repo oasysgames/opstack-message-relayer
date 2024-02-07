@@ -86,7 +86,11 @@ export default class Prover {
 
     // rollback finalized l2 height as same depth as proven l2 height
     const diff = currentProven - newProven
-    this.updateHighestFinalizedL2(this.state.highestFinalizedL2 - diff)
+    const finalized =
+      this.state.highestFinalizedL2 - diff < 0
+        ? 0
+        : this.state.highestFinalizedL2 - diff
+    this.updateHighestFinalizedL2(finalized)
   }
 
   public async handleSingleBlock(
@@ -130,12 +134,31 @@ export default class Prover {
         `[prover] txHash: ${txHash}, status: ${MessageStatus[status]})`
       )
 
+      const callWithMeta = {
+        target,
+        callData: null,
+        blockHeight: block.number,
+        txHash,
+        message,
+        err: null,
+      }
+
       if (status === MessageStatus.STATE_ROOT_NOT_PUBLISHED) {
         this.logger.info(`[prover] waits state root: ${txHash}`)
         // exit if the tx is not ready to prove
         throw new Error(`not state root published: ${txHash}`)
-      } else if (status !== MessageStatus.READY_TO_PROVE) {
-        // skip if other status than READY_TO_PROVE
+      } else if (status === MessageStatus.READY_TO_PROVE) {
+        // ok
+      } else if (
+        status === MessageStatus.IN_CHALLENGE_PERIOD ||
+        status === MessageStatus.READY_FOR_RELAY
+      ) {
+        // enqueue the message to the finalizer just in case
+        this.logger.info(`[prover] enqueue to finalizer for sure: ${txHash}`)
+        this.postMessage([callWithMeta])
+        continue
+      } else {
+        // skip, mostly already finalized
         continue
       }
 
@@ -149,17 +172,10 @@ export default class Prover {
       }
 
       // Populate calldata, the append to the list
-      const callData = (
+      callWithMeta.callData = (
         await this.messenger.populateTransaction.proveMessage(txHash)
       ).data
-      calldatas.push({
-        target,
-        callData,
-        blockHeight: block.number,
-        txHash,
-        message,
-        err: null,
-      })
+      calldatas.push(callWithMeta)
 
       // go next when lower than multicall target gas
       if (!this.multicaller?.isOverTargetGas(calldatas.length)) {

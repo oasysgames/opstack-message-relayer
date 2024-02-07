@@ -12,25 +12,10 @@ export default class DynamicSizeQueue<T> {
 
   constructor(path: string, ...initialElements: T[]) {
     this.storage = new LocalStorage(path)
-    this.loadInitalState()
+    this._loadInitalState()
     // Enqueue initial elements
     for (const element of initialElements) {
       this.enqueue(element)
-    }
-  }
-
-  loadInitalState(): number {
-    let key = this.rootKey
-    let total = 0
-    while (true) {
-      const data = this.storage.getItem(key)
-      if (data === null) {
-        this.tailKey = key
-        this.count = total
-        return total
-      }
-      key = this.generateKey(this.deserialize(data))
-      total++
     }
   }
 
@@ -46,18 +31,16 @@ export default class DynamicSizeQueue<T> {
 
   enqueue(...items: T[]): void {
     for (const item of items) {
-      const data = this.serialize(item)
-      if (this.isEmpty() || this.tailKey === '') {
-        // set the root key if the queue is empty
-        this.storage.setItem(this.rootKey, data)
-      } else {
-        // append the data to the tail key
-        this.storage.setItem(this.tailKey, data)
+      this._enqueue(item)
+    }
+  }
+
+  enqueueNoDuplicate(...items: T[]): void {
+    for (const item of items) {
+      if (this._has(item)) {
+        continue
       }
-      // update the tail key
-      this.tailKey = this.generateKey(item)
-      // increment count
-      this.count++
+      this._enqueue(item)
     }
   }
 
@@ -68,7 +51,7 @@ export default class DynamicSizeQueue<T> {
     // get the item from the root key
     const item = this.deserialize(this.storage.getItem(this.rootKey))
     // extract item
-    const nextKey = this.generateKey(item)
+    const nextKey = this._generateKey(item)
     const nextItem = this.storage.getItem(nextKey)
     if (nextItem === null) {
       // delete the root key if the queue is empty
@@ -82,14 +65,6 @@ export default class DynamicSizeQueue<T> {
     // decrement count
     this.count--
     return item
-  }
-
-  generateKey(data: T): string {
-    // assign the txHash as the tail key if it exists
-    // otherwise, use the sha256 hash of the data
-    return 'txHash' in (data as object)
-      ? (data['txHash'] as string)
-      : this.sha256(this.serialize(data)) || ''
   }
 
   peek(): T {
@@ -125,7 +100,50 @@ export default class DynamicSizeQueue<T> {
     })
   }
 
-  sha256(data: string): string {
+  private _loadInitalState(): number {
+    let key = this.rootKey
+    let total = 0
+    while (true) {
+      const data = this.storage.getItem(key)
+      if (data === null) {
+        this.tailKey = key
+        this.count = total
+        return total
+      }
+      key = this._generateKey(this.deserialize(data))
+      total++
+    }
+  }
+
+  private _generateKey(data: T): string {
+    // assign the txHash as the tail key if it exists
+    // otherwise, use the sha256 hash of the data
+    return 'txHash' in (data as object)
+      ? (data['txHash'] as string)
+      : this._sha256(this.serialize(data)) || ''
+  }
+
+  private _enqueue(item: T): void {
+    const data = this.serialize(item)
+    if (this.isEmpty() || this.tailKey === '') {
+      // set the root key if the queue is empty
+      this.storage.setItem(this.rootKey, data)
+    } else {
+      // append the data to the tail key
+      this.storage.setItem(this.tailKey, data)
+    }
+    // update the tail key
+    this.tailKey = this._generateKey(item)
+    // increment count
+    this.count++
+  }
+
+  private _has(item: T): boolean {
+    const key = this._generateKey(item)
+    return this.storage.getItem(key) !== null || key === this.tailKey
+  }
+
+  private _sha256(data: string): string {
     return createHash('sha256').update(data).digest('hex')
   }
 }
