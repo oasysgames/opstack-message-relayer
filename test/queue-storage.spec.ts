@@ -44,6 +44,7 @@ describe('FixedSizeQueue', function () {
       // enqueue no duplicate
       queue.enqueueNoDuplicate(
         { txHash: '0x1' },
+        { txHash: '0x9' },
         { txHash: '0x10' },
         { txHash: '0x4' }
       )
