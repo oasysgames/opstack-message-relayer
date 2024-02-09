@@ -3,11 +3,11 @@ Opstack message relayer developed using sdk
 
 ## Features
 - Standalone Operation
- - Our system operates independently without the need for any middleware such as Redis. It features an internal queue functionality where items are stored on disk instead of in memory to enhance operational stability. Despite items being stored on disk, no database is utilized; instead, items are recorded as files using [node-localstorage](https://github.com/lmaccherone/node-localstorage).
+  - Our system operates independently without the need for any middleware such as Redis. It features an internal queue functionality where items are stored on disk instead of in memory to enhance operational stability. Despite items being stored on disk, no database is utilized; instead, items are recorded as files using [node-localstorage](https://github.com/lmaccherone/node-localstorage).
 - Utilization of Multicore
   - The Layer 2 (L2) withdrawal process is divided into two phases for security purposes, as derived from the operational stack: proof and finalize. The message-relayer runs two separate intervals to process these phases in different threads, ensuring they do not interfere with each other.
 - Handling Reorg of Layer 2
- - In the context of the operational stack, L2 can undergo reorg. The message relayer is designed to manage this scenario. It's important to note that while the handling mechanism is robust, it is not foolproof. We operate under the assumption that the message relayer remains active, allowing for immediate detection of reorganizations, or it is temporarily halted and restarted once the reorganization has been fully addressed.
+  - In the context of the operational stack, L2 can undergo reorg. The message relayer is designed to manage this scenario. It's important to note that while the handling mechanism is robust, it is not foolproof. We operate under the assumption that the message relayer remains active, allowing for immediate detection of reorganizations, or it is temporarily halted and restarted once the reorganization has been fully addressed.
 
 ## Environment Variables
 This section offers detailed explanations for certain environment variables that necessitate additional clarification.
@@ -32,14 +32,15 @@ Follow these steps to get the service up and running:
 ```sh
 pnpm install
 ```
-1. Configure Environment Variables
+2. Configure Environment Variables
 ```sh
 # Copy the example environment file:
 cp .env.example .env
+
 # Edit the .env file to set your environment variables:
 vi .env
 ```
-1. Launch the Service
+3. Launch the Service
 ```sh
 pnpm start
 ```
@@ -52,21 +53,22 @@ npx tsx ./src/service.ts -h
 
 ## FAQ
 > Q. What should I do if there are withdrawals that have skipped prove or finalize? How can I recover them?
+
 A: First, stop the service. Then, manually edit the state file. The default location of the state file is written on the .env.example. This file maintains the starting height for proof withdrawal operations. To recover skipped withdrawals, adjust the height to a point before the skipped withdrawals were initiated. The only property you need to edit is `highestProvenL2`, even if the skipped operation is finalize; `highestFinalizedL2` does not need to be adjusted.
 
-# API Usage
+## API Usage
 Here are the commands to interact with the service's API:
 1. Health Check
 To verify that the service is running and healthy, execute:
 ```sh
 curl http://127.0.0.1:7300/healthz | jq
 ```
-1. Status Information
+2. Status Information
 To display the current status of the service, use:
 ```sh
 curl http://127.0.0.1:7300/api/status | jq
 ```
-1. Metrics
+3. Metrics
 For metrics related to the service's performance, enter:
 ```sh
 curl http://127.0.0.1:7300/metrics
