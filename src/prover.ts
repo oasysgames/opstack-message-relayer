@@ -65,7 +65,8 @@ export default class Prover {
 
   // TODO: incomplete handling
   // failed to handle when reorg started more deep than (proven height + reorgSafetyDepth)
-  // to avoide this case, we assume the service is kept live, and the reorg is detected instantly
+  // to avoide this case, we assume this service is kept live, and the reorg is detected instantly
+  // or this service is stopped and restarted after the reorg is resolved
   public handleL2Reorg(latest: number): void {
     this.updateHighestKnownL2(latest)
 
