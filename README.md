@@ -32,7 +32,12 @@ Follow these steps to get the service up and running:
 ```sh
 pnpm install
 ```
-2. Configure Environment Variables
+2. Deploy Multisig
+Deploy the multisig if you haven't done so already.
+```sh
+pnpm run deploy
+```
+3. Configure Environment Variables
 ```sh
 # Copy the example environment file:
 cp .env.example .env
@@ -40,7 +45,7 @@ cp .env.example .env
 # Edit the .env file to set your environment variables:
 vi .env
 ```
-3. Launch the Service
+4. Launch the Service
 ```sh
 pnpm start
 ```
