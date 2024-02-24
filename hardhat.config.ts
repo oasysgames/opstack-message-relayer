@@ -4,7 +4,7 @@ import '@nomiclabs/hardhat-ethers'
 import '@nomiclabs/hardhat-waffle'
 import 'dotenv/config'
 
-const DEPLOYER_KEY: string = process.env.DEPLOYER_KEY || process.env.MESSAGE_RELAYER__L1_WALLET || "";
+const DEPLOYER_KEY: string = process.env.DEPLOYER_KEY || process.env.MESSAGE_RELAYER__PROVER_PRIVATE_KEY || "";
 
 const config: HardhatUserConfig = {
   networks: {

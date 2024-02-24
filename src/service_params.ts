@@ -6,7 +6,7 @@ import { version } from '../package.json'
 export type MessageRelayerOptions = {
   l1RpcProvider: Provider
   l2RpcProvider: Provider
-  l1Wallet: Signer
+  proverPrivateKey: Signer
   fromL2TransactionIndex?: number
   addressManager?: string
   l1CrossDomainMessenger?: string
@@ -14,11 +14,6 @@ export type MessageRelayerOptions = {
   OutputOracle?: string
   multicallAddress?: string
   multicallTargetGas?: number
-  // l1StandardBridge?: string
-  // l2StandardBridge?: string
-  // stateCommitmentChain?: string
-  // canonicalTransactionChain?: string
-  // bondManager?: string
   receiptTimeout?: number
   gasMultiplier?: number
   depositConfirmationBlocks?: number
@@ -41,9 +36,9 @@ export const serviceOptionsSpec: any = {
     validator: validators.provider,
     desc: 'Provider for interacting with L2.',
   },
-  l1Wallet: {
+  proverPrivateKey: {
     validator: validators.wallet,
-    desc: 'Wallet used to interact with L1.',
+    desc: 'Private key of the prover. Should not be the same as the finalizerPrivateKey.',
   },
   addressManager: {
     validator: validators.str,
@@ -107,7 +102,7 @@ export const serviceOptionsSpec: any = {
   },
   finalizerPrivateKey: {
     validator: validators.str,
-    desc: 'Private key of finalizer',
+    desc: 'Private key of finalizer. Set `messageRelayer` key of OasysPortal to use instant verifier',
   },
 }
 

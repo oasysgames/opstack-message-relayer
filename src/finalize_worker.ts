@@ -1,11 +1,12 @@
 import { parentPort, workerData } from 'worker_threads'
-import { ethers } from 'ethers'
+import { ethers, Contract } from 'ethers'
 import { Logger, LogLevel } from '@eth-optimism/common-ts'
 import {
   CrossChainMessenger,
   CrossChainMessage,
   DEFAULT_L2_CONTRACT_ADDRESSES,
 } from '@eth-optimism/sdk'
+import IOasysL2OutputOracle from './contracts/IOasysL2OutputOracle.json'
 import Finalizer from './finalizer'
 import { Portal } from './portal'
 import { ZERO_ADDRESS } from './utils'
@@ -95,11 +96,18 @@ const messenger = new CrossChainMessenger({
   bedrock: true,
 })
 
+const outputOracle = new Contract(
+  outputOracleAddress,
+  IOasysL2OutputOracle.abi,
+  wallet
+)
+
 const finalizer = new Finalizer(
   queuePath,
   loopIntervalMs,
   logger,
   messenger,
+  outputOracle,
   new Portal(portalAddress, wallet, multicallTargetGas, gasMultiplier),
   (msg: FinalizerMessage) => {
     parentPort?.postMessage(msg)

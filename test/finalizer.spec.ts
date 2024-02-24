@@ -8,9 +8,12 @@ import { sleep } from '../src/utils'
 describe('Finalizer', function () {
   async function setup() {
     const signers = await ethers.getSigners()
-    // deploy portal contract
+    // deploy contracts
     const portalContract = await (
       await ethers.getContractFactory('MockOasysPortal')
+    ).deploy()
+    const oracleContract = await (
+      await ethers.getContractFactory('MockOasysL2OutputOracle')
     ).deploy()
     // estimate single call gas
     // const call = {
@@ -42,6 +45,7 @@ describe('Finalizer', function () {
       100,
       logger,
       messenger,
+      oracleContract,
       portal,
       () => {}
     )
@@ -102,13 +106,14 @@ describe('Finalizer', function () {
       await finalizer.stop()
     })
 
-    it('succeed: skip already falized or in challenge period', async function () {
+    it('succeed: skip already falized or in challenge period | instant verify', async function () {
       const messages = [
         { blockHeight: 1, txHash: '1', message: 0x1 },
         { blockHeight: 2, txHash: '2', message: 0x2 },
         { blockHeight: 3, txHash: '3', message: 0x3 },
         { blockHeight: 4, txHash: '4', message: 0x4 },
         { blockHeight: 5, txHash: '5', message: 0x5 },
+        { blockHeight: 5, txHash: '5', message: 0x6 },
       ]
       const { portalContract, finalizer } = await setup()
       // @ts-ignore
@@ -116,9 +121,9 @@ describe('Finalizer', function () {
 
       await sleep(3000)
 
-      expect(finalizer.queue.count).to.equal(1)
-      expect(finalizer.highestFinalizedL2).to.equal(2)
-      for (let i = 0; i < 3; i++) {
+      expect(finalizer.queue.count).to.equal(0)
+      expect(finalizer.highestFinalizedL2).to.equal(3)
+      for (let i = 0; i < 4; i++) {
         const hash = await portalContract.computeWithdrawalHash(
           messages[i].message
         )

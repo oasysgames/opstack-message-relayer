@@ -13,10 +13,11 @@ Opstack message relayer developed using sdk
 This section offers detailed explanations for certain environment variables that necessitate additional clarification.
 - MESSAGE_RELAYER__LOOP_INTERVAL_MS
   - Sets the frequency (in milliseconds) at which the system checks the necessity for proof and finalize operations.
-- MESSAGE_RELAYER__L1_WALLET
+- MESSAGE_RELAYER__PROVER_PRIVATE_KEY
   - Defines the private key, in raw hexadecimal format, used for sending prove transactions.
 - MESSAGE_RELAYER__FINALIZER_PRIVATE_KEY
-  - Specifies the private key for sending finalize transactions. Don't use the same key as MESSAGE_RELAYER__L1_WALLET.
+  - Specifies the private key for sending finalize transactions. Don't use the same key as MESSAGE_RELAYER__PROVER_PRIVATE_KEY.
+  - Set the same address as `messageRelayer` key of OasysPortal to use instant verifier
 - MESSAGE_RELAYER__STATE_FILE_PATH
   - Indicates the path to the file where the last checked block height is recorded. Manual modifications should be avoided except in exceptional circumstances, such as during an incident response.
 - MESSAGE_RELAYER__QUEUE_PATH

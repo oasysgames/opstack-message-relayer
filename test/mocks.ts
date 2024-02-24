@@ -3,6 +3,7 @@ import { ZERO_ADDRESS } from '../src/utils'
 import { BigNumber } from 'ethers'
 
 export class MockCrossChain {
+  private l1Provider: any
   private contract: any
   private contracts: any
   private estimateGas: any
@@ -14,6 +15,16 @@ export class MockCrossChain {
       l1: {
         OptimismPortal: {
           target: contract.address,
+          provenWithdrawals: () => {
+            if (this.counter <= 4) {
+              return {
+                timestamp: BigNumber.from(9999999999),
+              }
+            }
+            return {
+              timestamp: BigNumber.from(0),
+            }
+          },
         },
       },
     }
@@ -33,11 +44,10 @@ export class MockCrossChain {
 
     if (this.counter <= 3) {
       return MessageStatus.READY_FOR_RELAY
-    } else if (this.counter === 4) {
-      return MessageStatus.RELAYED
+    } else if (this.counter <= 5) {
+      return MessageStatus.IN_CHALLENGE_PERIOD
     }
-
-    return MessageStatus.IN_CHALLENGE_PERIOD
+    return MessageStatus.RELAYED
   }
 
   async toLowLevelMessage(message: any): Promise<LowLevelMessage> {

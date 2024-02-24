@@ -54,7 +54,9 @@ export class MessageRelayerService extends BaseServiceV2<
   protected async init(): Promise<void> {
     this.logger.info('[service] startup options', this.options)
 
-    this.wallet = this.options.l1Wallet.connect(this.options.l1RpcProvider)
+    this.wallet = this.options.proverPrivateKey.connect(
+      this.options.l1RpcProvider
+    )
     const contracts: DeepPartial<OEContractsLike> = {
       l1: {
         AddressManager: this.options.addressManager,

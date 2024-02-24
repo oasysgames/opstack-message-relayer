@@ -1,5 +1,11 @@
 import { Logger } from '@eth-optimism/common-ts'
-import { CrossChainMessenger, MessageStatus } from '@eth-optimism/sdk'
+import {
+  CrossChainMessenger,
+  MessageStatus,
+  LowLevelMessage,
+  hashLowLevelMessage,
+} from '@eth-optimism/sdk'
+import { Contract } from 'ethers'
 import DynamicSizeQueue from './queue-storage'
 import FixedSizeQueue from './queue-mem'
 import { Portal, WithdrawMsgWithMeta } from './portal'
@@ -12,6 +18,7 @@ export default class Finalizer {
   public portal: Portal
   public running: boolean
 
+  private outputOracle: Contract
   private pollingTimeout: NodeJS.Timeout
   private loopIntervalMs: number
   private logger: Logger
@@ -23,6 +30,7 @@ export default class Finalizer {
     loopIntervalMs: number,
     logger: Logger,
     messenger: CrossChainMessenger,
+    outputOracle: Contract,
     portal: Portal,
     notifyer: (msg: FinalizerMessage) => void
   ) {
@@ -35,6 +43,7 @@ export default class Finalizer {
     this.loopIntervalMs = loopIntervalMs
     this.logger = logger
     this.messenger = messenger
+    this.outputOracle = outputOracle
     this.portal = portal
     this.finalizedNotifyer = notifyer
   }
@@ -53,18 +62,28 @@ export default class Finalizer {
         const txHash = head.txHash
         const message = head.message
         const status = await this.messenger.getMessageStatus(message)
+        let lowLevelMessage: LowLevelMessage
 
-        // still in challenge period
-        if (status < MessageStatus.READY_FOR_RELAY) {
-          // the head in queue is the oldest message, so we assume the rest of the queue is also in challenge period
-          this.logger.info(
-            `[finalizer] message is still in challenge period, txhash: ${txHash}, blockHeight: ${head.blockHeight}, status: ${status}`
-          )
-          break
-        }
+        if (MessageStatus.READY_FOR_RELAY > status) {
+          // still in challenge period
+          lowLevelMessage = await this.messenger.toLowLevelMessage(message)
 
-        // already finalized
-        if (MessageStatus.READY_FOR_RELAY < status) {
+          if (await this.isInstantVerified(lowLevelMessage)) {
+            // instant verified, so proceed with finalize
+            // As important to note, the finalizer key should be same as the messageRelayer key of OasysPortal
+            // Otherwise, the finalize will fail
+          } else {
+            // the head in queue is the oldest message, so we assume the rest of the queue is also in challenge period
+            this.logger.info(
+              `[finalizer] message is still in challenge period, txhash: ${txHash}, blockHeight: ${head.blockHeight}, status: ${status}`
+            )
+            break
+          }
+        } else if (MessageStatus.READY_FOR_RELAY === status) {
+          // ready for finalize
+          lowLevelMessage = await this.messenger.toLowLevelMessage(message)
+        } else if (MessageStatus.READY_FOR_RELAY < status) {
+          // already finalized
           this.queue.dequeue() // evict the head from queue
           this.logger.debug(
             `[finalizer] message ${message} is already relayed, txhash: ${txHash}, blockHeight: ${head.blockHeight}`
@@ -73,7 +92,7 @@ export default class Finalizer {
         }
 
         const withdraw = {
-          ...(await this.messenger.toLowLevelMessage(message)),
+          ...lowLevelMessage,
           blockHeight: head.blockHeight,
           txHash,
           err: null,
@@ -175,6 +194,21 @@ export default class Finalizer {
     this.logger.debug(
       `[finalizer] received txhashes: ${messages.map((m) => m.txHash)}`
     )
+  }
+
+  private async isInstantVerified(message: LowLevelMessage): Promise<boolean> {
+    const provenWithdrawal =
+      await this.messenger.contracts.l1.OptimismPortal.provenWithdrawals(
+        hashLowLevelMessage(message)
+      )
+    const provenTimestamp = provenWithdrawal.timestamp.toNumber()
+    const verifiedTimestamp = (
+      await this.outputOracle.verifiedL1Timestamp()
+    ).toNumber()
+    console.log('isInstantVerified', provenTimestamp, verifiedTimestamp)
+    // About instant verify logic, refer to here
+    // https://github.com/oasysgames/oasys-opstack/blob/c95f16aa27b5400831a3e1b01c05911ea63a256c/packages/contracts-bedrock/src/oasys/L1/messaging/OasysPortal.sol#L68
+    return provenTimestamp < verifiedTimestamp
   }
 
   protected updateHighestFinalized(withdraws: WithdrawMsgWithMeta[]): boolean {
