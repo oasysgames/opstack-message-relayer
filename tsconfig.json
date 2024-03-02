@@ -22,6 +22,7 @@
     "src/**/*",
     "src/contracts/Multicall2.json",
     "src/contracts/IOasysPortal.json",
+    "src/contracts/IOasysL2OutputOracle.json",
     "./package.json",
   ],
   "exclude": [
