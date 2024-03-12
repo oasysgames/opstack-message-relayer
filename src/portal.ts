@@ -48,7 +48,8 @@ export class Portal {
       this.singleWithdrawGas = gas
       return
     }
-    this.perWithdrawGas = gas - this.singleWithdrawGas
+    const multiplier = 0.9 // this multiplier is obtained by testing
+    this.perWithdrawGas = (gas - this.singleWithdrawGas) * multiplier
     this.baseGas = this.singleWithdrawGas - this.perWithdrawGas
   }
 
@@ -104,9 +105,9 @@ export class Portal {
 
   // Compute expected gas cost
   private computeExpectedGas(size: number): number {
-    return Math.floor(
+    const expected =
       (this.baseGas + this.perWithdrawGas * size) * this.gasMultiplier
-    )
+    return Math.floor(expected)
   }
 
   public convertToCall(

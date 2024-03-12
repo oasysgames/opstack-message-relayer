@@ -63,12 +63,12 @@ export const serviceOptionsSpec: any = {
   multicallTargetGas: {
     validator: validators.num,
     desc: 'gas target for multicall contract when the relay',
-    default: 1500000,
+    default: 3000000,
   },
   gasMultiplier: {
     validator: validators.num,
     desc: 'Gas limit multiplier.',
-    default: 1.1,
+    default: 1.01,
   },
   l1BlockTimeSeconds: {
     validator: validators.num,
