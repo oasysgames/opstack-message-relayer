@@ -205,7 +205,6 @@ export default class Finalizer {
     const verifiedTimestamp = (
       await this.outputOracle.verifiedL1Timestamp()
     ).toNumber()
-    console.log('isInstantVerified', provenTimestamp, verifiedTimestamp)
     // About instant verify logic, refer to here
     // https://github.com/oasysgames/oasys-opstack/blob/c95f16aa27b5400831a3e1b01c05911ea63a256c/packages/contracts-bedrock/src/oasys/L1/messaging/OasysPortal.sol#L68
     return provenTimestamp < verifiedTimestamp
