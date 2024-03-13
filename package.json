@@ -11,7 +11,7 @@
     "start": "tsx ./src/service.ts",
     "test:coverage": "echo 'No tests defined.'",
     "build": "tsc -p ./tsconfig.json",
-    "deploy": "npx hardhat deploy --network localhost --reset",
+    "deploy": "npx hardhat deploy --network layer1 --reset",
     "clean": "rm -rf  dist/",
     "lint": "pnpm lint:fix && pnpm lint:check",
     "fmt": "prettier --write --list-different '{src,test}/**/*.{ts,js}'",
@@ -28,8 +28,10 @@
     "@eth-optimism/common-ts": "^0.8.7",
     "@eth-optimism/sdk": "^3.1.4",
     "@ethersproject/abstract-provider": "^5.7.0",
+    "@openzeppelin/contracts": "^5.0.2",
     "ethers": "^5.7.2",
-    "node-localstorage": "^3.0.5"
+    "node-localstorage": "^3.0.5",
+    "web3": "^4.6.0"
   },
   "devDependencies": {
     "@ethersproject/bytes": "^5.7.0",
