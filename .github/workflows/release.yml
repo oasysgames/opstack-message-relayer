@@ -2,9 +2,9 @@ name: Release
 
 on:
   push:
-    branches: ["feat/add-ci"]
-    # tags:
-    #   - 'v*'
+    # branches: ["feat/add-ci"]
+    tags:
+      - 'v*'
 
 jobs:
   release:
