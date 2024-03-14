@@ -8,9 +8,15 @@ dependencies:
   '@eth-optimism/common-ts':
     specifier: ^0.8.7
     version: 0.8.7
+  '@eth-optimism/contracts-bedrock':
+    specifier: 0.16.2
+    version: 0.16.2
+  '@eth-optimism/core-utils':
+    specifier: 0.12.0
+    version: 0.12.0
   '@eth-optimism/sdk':
-    specifier: ^3.1.4
-    version: 3.1.4(ethers@5.7.2)
+    specifier: ^3.1.5
+    version: 3.2.2(ethers@5.7.2)
   '@ethersproject/abstract-provider':
     specifier: ^5.7.0
     version: 5.7.0
@@ -449,6 +455,11 @@ packages:
     requiresBuild: true
     dev: false
 
+  /@eth-optimism/contracts-bedrock@0.17.1:
+    resolution: {integrity: sha512-Hc5peN5PM8kzl9dzqSD5jv6ED3QliO1DF0dXLRJxfrXR7/rmEeyuAYESUwUM0gdJZjkwRYiS5m230BI6bQmnlw==}
+    requiresBuild: true
+    dev: false
+
   /@eth-optimism/contracts@0.6.0(ethers@5.7.2):
     resolution: {integrity: sha512-vQ04wfG9kMf1Fwy3FEMqH2QZbgS0gldKhcBeBUPfO8zu68L61VI97UDXmsMQXzTsEAxK8HnokW3/gosl4/NW3w==}
     peerDependencies:
@@ -511,19 +522,19 @@ packages:
       - utf-8-validate
     dev: false
 
-  /@eth-optimism/sdk@3.1.4(ethers@5.7.2):
-    resolution: {integrity: sha512-gqbw/7KAwXSiFF7KN57oe3iz0kcOuSUTfnkAf0aZImmSbegPY5AWszxYvnQCIXcWRY0kaDf3LpXrHKur4TdgGA==}
-    requiresBuild: true
+  /@eth-optimism/sdk@3.2.2(ethers@5.7.2):
+    resolution: {integrity: sha512-P8YXAlh2lun0KZlwrw4FqmK4kNIoOOzI816XXhfkW3nMVADGRAru3TKSM74MgmEuyGiHrA9EoPRq1WLqUX4B0w==}
     peerDependencies:
       ethers: ^5
     dependencies:
       '@eth-optimism/contracts': 0.6.0(ethers@5.7.2)
-      '@eth-optimism/contracts-bedrock': 0.16.2
+      '@eth-optimism/contracts-bedrock': 0.17.1
       '@eth-optimism/core-utils': 0.13.1
       ethers: 5.7.2
       lodash: 4.17.21
       merkletreejs: 0.3.11
       rlp: 2.2.7
+      semver: 7.6.0
     transitivePeerDependencies:
       - bufferutil
       - encoding
@@ -4889,7 +4900,6 @@ packages:
     engines: {node: '>=10'}
     dependencies:
       yallist: 4.0.0
-    dev: true
 
   /lru_map@0.3.3:
     resolution: {integrity: sha512-Pn9cox5CsMYngeDbmChANltQl+5pi6XmTrraMSzhPmMBbmgcxmqWry0U3PGapCU1yB4/LqCcom7qhHZiF/jGfQ==}
@@ -6026,6 +6036,14 @@ packages:
     dependencies:
       lru-cache: 6.0.0
     dev: true
+
+  /semver@7.6.0:
+    resolution: {integrity: sha512-EnwXhrlwXMk9gKu5/flx5sv/an57AkRplG3hTK68W7FRDN+k+OWBj65M7719OkA82XLBxrcX0KSHj+X5COhOVg==}
+    engines: {node: '>=10'}
+    hasBin: true
+    dependencies:
+      lru-cache: 6.0.0
+    dev: false
 
   /send@0.18.0:
     resolution: {integrity: sha512-qqWzuOjSFOuqPjFe4NOsMLafToQQwBSOEpS+FwEt3A2V3vKubTquT3vmLTQpFgMXp8AlFWFuP1qKaJZOtPpVXg==}
@@ -7216,7 +7234,6 @@ packages:
 
   /yallist@4.0.0:
     resolution: {integrity: sha512-3wdGidZyq5PB084XLES5TpOSRA3wjXAlIWMhum2kRcv/41Sn2emQ0dycQW4uZXLejwKvg6EsvbdlVL+FYEct7A==}
-    dev: true
 
   /yargs-parser@2.4.1:
     resolution: {integrity: sha512-9pIKIJhnI5tonzG6OnCFlz/yln8xHYcGl+pn3xR0Vzff0vzN1PbNRaelgfgRUwZ3s4i3jvxT9WhmUGL4whnasA==}

@@ -10,8 +10,8 @@ cp ../../private-opstack/bridge-tutorial/src/lib/sdk.js lib/
 ```sh
 npx hardhat deploy --network layer1 --tags l1-erc20
 npx hardhat deploy --network layer1 --tags l1-erc721
-npx hardhat deploy --network layer1 --tags factory-erc20
-npx hardhat deploy --network layer1 --tags factory-erc721
+npx hardhat deploy --network layer2 --tags factory-erc20
+npx hardhat deploy --network layer2 --tags factory-erc721
 
 ```
 

@@ -530,10 +530,18 @@ export async function mintERC721(
   provider: Provider,
   mintTo: string,
   amount: string
-) {
+): Promise<[number, number]> {
   const erc721 = new Contract(address, ERC721ABI, provider)
 
   const mintERC721Tx = await erc721.connect(signer).batchMint(amount, mintTo)
+  await mintERC721Tx.wait(1)
 
   console.log('MintERC721 to acc:', mintTo, ' with tx:', mintERC721Tx.hash)
+
+  const getTokenId = await erc721.tokenId()
+
+  return [
+    Number(getTokenId.toString()) - Number(amount),
+    Number(getTokenId.toString()) - 1,
+  ]
 }

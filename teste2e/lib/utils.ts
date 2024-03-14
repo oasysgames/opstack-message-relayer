@@ -380,7 +380,7 @@ export async function createOptimisticERC721(
     data: txData,
     to: factoryContract,
     from: signer.address,
-    gas: '1000000',
+    gas: '10000000',
     gasPrice: '0',
   }
 
