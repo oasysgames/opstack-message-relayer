@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config()
 import { TransactionResponse } from '@ethersproject/abstract-provider'
 import { MessageStatus } from '@eth-optimism/sdk'
 import { ERC721BridgeAdapter } from './lib/erc721-bridge-adapter'

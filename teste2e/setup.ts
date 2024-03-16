@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config()
 import { Overrides as TxOverrides } from 'ethers'
 import { TransactionResponse } from '@ethersproject/abstract-provider'
 import { MessageStatus } from '@eth-optimism/sdk'
