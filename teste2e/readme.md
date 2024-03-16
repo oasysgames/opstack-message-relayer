@@ -6,12 +6,12 @@ E2E tests are conducted on top of the [private-opstack](https://github.com/oasys
 ```sh
 cp ../../private-opstack/bridge-tutorial/src/lib/sdk.js lib/
 ```
-1. Deploy and Mint ERC20/721 from [l1-l2-bridge-tutorial/contract](https://github.com/oasysgames/l1-l2-bridge-tutorial/tree/feat/v2/contract)
-1. Edit the .env.sample:
+2. Deploy and Mint ERC20/721 from [l1-l2-bridge-tutorial/contract](https://github.com/oasysgames/l1-l2-bridge-tutorial/tree/feat/v2/contract)
+3. Edit the .env.sample:
 ```sh
 cp .env.sample .env
 ```
-1. Run setup.ts to bridge OAS for gas purposes:
+4. Run setup.ts to bridge OAS/ERC20/721 for gas purposes:
 ```sh
 npx ts-node setup.ts
 ```
