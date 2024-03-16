@@ -3,20 +3,74 @@ import * as ethers from 'ethers'
 export const Gwei = BigInt(1e9)
 export const Ether = Gwei * Gwei // 10^18
 
-export const ERC20ABI = {
-  inputs: [{ internalType: 'address', name: 'account', type: 'address' }],
-  name: 'balanceOf',
-  outputs: [{ internalType: 'uint256', name: '', type: 'uint256' }],
-  stateMutability: 'view',
-  type: 'function',
+export const ERC20ABI = [
+  {
+    inputs: [{ internalType: 'address', name: 'account', type: 'address' }],
+    name: 'balanceOf',
+    outputs: [{ internalType: 'uint256', name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [
+      {
+        internalType: 'address',
+        name: 'spender',
+        type: 'address',
+      },
+      {
+        internalType: 'uint256',
+        name: 'amount',
+        type: 'uint256',
+      },
+    ],
+    name: 'approve',
+    outputs: [
+      {
+        internalType: 'bool',
+        name: '',
+        type: 'bool',
+      },
+    ],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+]
+
+export const ERC721ABI = [
+  {
+    inputs: [{ internalType: 'uint256', name: 'id', type: 'uint256' }],
+    name: 'ownerOf',
+    outputs: [{ internalType: 'address', name: 'owner', type: 'address' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [
+      {
+        internalType: 'address',
+        name: 'to',
+        type: 'address',
+      },
+      {
+        internalType: 'uint256',
+        name: 'tokenId',
+        type: 'uint256',
+      },
+    ],
+    name: 'approve',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+]
+
+export const getContractERC20 = (address: string, signer: ethers.Signer) => {
+  return new ethers.Contract(address, ERC20ABI, signer)
 }
 
-export const ERC721ABI = {
-  inputs: [{ internalType: 'uint256', name: 'id', type: 'uint256' }],
-  name: 'ownerOf',
-  outputs: [{ internalType: 'address', name: 'owner', type: 'address' }],
-  stateMutability: 'view',
-  type: 'function',
+export const getContractERC72 = (address: string, signer: ethers.Signer) => {
+  return new ethers.Contract(address, ERC721ABI, signer)
 }
 
 export const log = (...lines: string[]) =>

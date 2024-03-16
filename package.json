@@ -14,7 +14,7 @@
     "deploy": "npx hardhat deploy --network localhost --reset",
     "clean": "rm -rf  dist/",
     "lint": "pnpm lint:fix && pnpm lint:check",
-    "fmt": "prettier --write --list-different '{src,test}/**/*.{ts,js}'",
+    "fmt": "prettier --write --list-different '{src,test,teste2e}/**/*.{ts,js}'",
     "pre-commit": "lint-staged",
     "lint:fix": "pnpm lint:check --fix",
     "lint:check": "eslint . --max-warnings=0",
@@ -26,12 +26,14 @@
   "author": "Oasys Dev",
   "dependencies": {
     "@eth-optimism/common-ts": "^0.8.7",
-    "@eth-optimism/sdk": "^3.1.4",
+    "@eth-optimism/sdk": "^3.1.5",
     "@ethersproject/abstract-provider": "^5.7.0",
     "ethers": "^5.7.2",
     "node-localstorage": "^3.0.5"
   },
   "devDependencies": {
+    "@eth-optimism/contracts-bedrock": "0.16.2",
+    "@eth-optimism/core-utils": "0.12.0",
     "@ethersproject/bytes": "^5.7.0",
     "@nomiclabs/hardhat-ethers": "^2.2.3",
     "@nomiclabs/hardhat-waffle": "^2.0.1",
