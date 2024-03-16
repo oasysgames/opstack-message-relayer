@@ -1,3 +1,4 @@
+require('dotenv').config();
 import { TransactionResponse } from '@ethersproject/abstract-provider'
 import { MessageStatus } from '@eth-optimism/sdk'
 import { ERC721BridgeAdapter } from './lib/erc721-bridge-adapter'
@@ -10,10 +11,10 @@ const L1_ERC20_ADDRESS = process.env.L1_ERC20_ADDRESS!
 const L2_ERC20_ADDRESS = process.env.L2_ERC20_ADDRESS!
 const L1_ERC721_ADDRESS = process.env.L1_ERC721_ADDRESS!
 const L2_ERC721_ADDRESS = process.env.L2_ERC721_ADDRESS!
+const TOKEN_ID_START = Number(process.env.TOKEN_ID_START!)
+const TOKEN_ID_END = Number(process.env.TOKEN_ID_END!)
 
 const AMOUNT = '1' // 1 OAS
-const TOKEN_ID_START = 5
-const TOKEN_ID_END = 7
 const bridgeAdapter = {
   adapter: ERC721BridgeAdapter,
   l1Bridge: opsdk.l1Contracts.L1ERC721BridgeProxy,

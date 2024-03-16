@@ -1,3 +1,4 @@
+require('dotenv').config();
 import { Overrides as TxOverrides } from 'ethers'
 import { TransactionResponse } from '@ethersproject/abstract-provider'
 import { MessageStatus } from '@eth-optimism/sdk'
@@ -12,6 +13,8 @@ const L1_ERC20_ADDRESS = process.env.L1_ERC20_ADDRESS!
 const L2_ERC20_ADDRESS = process.env.L2_ERC20_ADDRESS!
 const L1_ERC721_ADDRESS = process.env.L1_ERC721_ADDRESS!
 const L2_ERC721_ADDRESS = process.env.L2_ERC721_ADDRESS!
+const TOKEN_ID_START = Number(process.env.TOKEN_ID_START!)
+const TOKEN_ID_END = Number(process.env.TOKEN_ID_END!)
 
 // Setup the OP Stack SDK
 const { l1Signer, l2Signer } = opsdk.getSigners({ privateKey: PRIVATE_KEY })
@@ -27,7 +30,6 @@ const messenger721 = opsdk.getCrossChainMessenger({
 })
 
 const AMOUNT = '100' // 100 OAS
-const TOKEN_ID_START = 5
 
 async function main() {
   // create test accounts
@@ -77,30 +79,32 @@ async function main() {
       } on L1. tx: ${abbreviateTxHash(tx2.hash)}\n`
     )
 
-    // // deposit ERC721
-    await messenger721.approveERC20(
-      L1_ERC721_ADDRESS,
-      L2_ERC721_ADDRESS,
-      tokenId,
-      {
-        overrides: { from: l1Signer.address } as TxOverrides,
-      }
-    )
-    const tx3 = await messenger721.depositERC20(
-      L1_ERC721_ADDRESS,
-      L2_ERC721_ADDRESS,
-      tokenId,
-      {
-        recipient: wallet.address,
-        overrides: { from: l1Signer.address } as TxOverrides,
-      }
-    )
-    txs.push(tx3)
-    log(
-      `ERC721 tokenId ${tokenId} deposited to ${
-        wallet.address
-      } on L1. tx: ${abbreviateTxHash(tx3.hash)}\n`
-    )
+    // deposit ERC721
+    if (tokenId < TOKEN_ID_END) {
+      await messenger721.approveERC20(
+        L1_ERC721_ADDRESS,
+        L2_ERC721_ADDRESS,
+        tokenId,
+        {
+          overrides: { from: l1Signer.address } as TxOverrides,
+        }
+      )
+      const tx3 = await messenger721.depositERC20(
+        L1_ERC721_ADDRESS,
+        L2_ERC721_ADDRESS,
+        tokenId,
+        {
+          recipient: wallet.address,
+          overrides: { from: l1Signer.address } as TxOverrides,
+        }
+      )
+      txs.push(tx3)
+      log(
+        `ERC721 tokenId ${tokenId} deposited to ${
+          wallet.address
+        } on L1. tx: ${abbreviateTxHash(tx3.hash)}\n`
+      )
+    }
 
     tokenId++
   }
