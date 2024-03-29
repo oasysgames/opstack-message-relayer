@@ -5,6 +5,7 @@ import { TransactionManager } from '../src/transaction-manager'
 import Prover from '../src/prover'
 import { MockCrossChainForProver, MockLogger, MockMetrics } from './mocks'
 import { sleep, rand, readFromFile, deleteFileIfExists } from '../src/utils'
+import { sign } from 'crypto'
 
 const stateFilePath = './test/state.test.json'
 const l2blockConfirmations = 8
@@ -61,6 +62,7 @@ describe('TransactionManager', function () {
     await prover.init()
 
     const transactionManager = new TransactionManager(signers[0])
+    await transactionManager.init()
 
     return {
       signers,
@@ -75,10 +77,19 @@ describe('TransactionManager', function () {
   }
 
   describe('Init success', function () {
-    it('Nonce not null', async function () {
-      const { transactionManager } = await setup()
-      const nonce = await transactionManager.getNonce()
-      expect(nonce).not.to.eq(0)
+    it('From address init success', async function () {
+      const { transactionManager, signers } = await setup()
+      const fromAddress = await transactionManager.getFromAddress();
+      expect(fromAddress).to.be.eq(signers[0].address)
+    })
+  })
+
+  describe('Send transaction', function() {
+    it('Push raw transaction success', async () => {
+      const { signers, counter, transactionManager } = await setup()
+      const data = await counter.populateTransaction.incSimple()
+      await transactionManager.enqueueTransaction(data)
+      await transactionManager.enqueueTransaction(data)
     })
   })
 })
