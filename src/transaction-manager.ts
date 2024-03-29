@@ -16,24 +16,28 @@ export class TransactionManager {
   /**
    * The fixed size of the pending transaction - the transaction that has been sent but not yet confirmed
    */
-  private pendingTransaction: FixedSizeQueue<string>
+  private pendingTransaction: Set<string>
   /**
    * The running state of the transaction manager
    */
   private running: boolean
+  private maxPendingTxs: number
   private pollingTimeout: NodeJS.Timeout
-  constructor(wallet: Signer, maxPendingTxs) {
+  constructor(wallet: Signer, maxPendingTxs: number) {
     this.wallet = wallet
     this.waitingTransaction = new FixedSizeQueue<PopulatedTransaction>(500)
-    this.pendingTransaction = new FixedSizeQueue<string>(maxPendingTxs)
+    this.pendingTransaction = new Set<string>()
     this.running = false
+    this.maxPendingTxs = maxPendingTxs
   }
 
   /**
    * Init state of the transaction manager, should be called after constructor
    */
   async init() {
-    this.nonce = await this.wallet.provider.getTransactionCount(this.wallet.getAddress())
+    this.nonce = await this.wallet.provider.getTransactionCount(
+      this.wallet.getAddress()
+    )
   }
 
   /**
@@ -43,9 +47,26 @@ export class TransactionManager {
   async getFromAddress() {
     return await this.wallet.getAddress()
   }
-  
+
+  /**
+   *
+   * @returns Get the current nonce of the wallet
+   */
   async getNonce() {
-    return await this.wallet.provider.getTransactionCount(this.wallet.getAddress())
+    return await this.wallet.provider.getTransactionCount(
+      this.wallet.getAddress()
+    )
+  }
+
+  /**
+   * Get the current stats of the queue
+   * @returns
+   */
+  getCurrentStats() {
+    return {
+      waitingSize: this.waitingTransaction.count,
+      pendingSize: this.pendingTransaction.size,
+    }
   }
 
   /**
@@ -63,47 +84,48 @@ export class TransactionManager {
    * Send the transaction in the waiting list, append it into pendingList
    */
   private async sendTransaction() {
-    // First, clear successfull pendingTx
-    while (!this.pendingTransaction.isEmpty()) {
-      const txHash = this.pendingTransaction.peek();
-      if (await this.isTxConfirmed(txHash)) {
-        // When a transaction is confirmed, remove it from pendingTransaction
-        this.pendingTransaction.dequeue()
-      } else {
-        // break when a transaction is not yet confirmed
-        break
-      }
-    }
-
-    while (!this.pendingTransaction.isFull()) {
-      if (this.waitingTransaction.isEmpty()) break;
+    while (this.pendingTransaction.size < this.maxPendingTxs) {
+      if (this.waitingTransaction.isEmpty()) break
       const txData = this.waitingTransaction.dequeue()
       const tx = await this.wallet.sendTransaction({
         ...txData,
         nonce: this.nonce,
       })
       this.nonce++
-      this.pendingTransaction.enqueue(tx.hash)
+      this.pendingTransaction.add(tx.hash)
     }
   }
 
-  private async isTxConfirmed(txHash: string): Promise<boolean> {
-    const tx = await this.wallet.provider.getTransactionReceipt(txHash)
-    return tx.blockNumber !== null && tx.blockNumber != undefined
+  /**
+   * Remove the pending transaction that has been confirmed
+   */
+  async removePendingTx() {
+    const txs = Array.from(this.pendingTransaction)
+    const currentBlock = await this.wallet.provider.getBlockNumber()
+    const receipts = await Promise.all(
+      txs.map((tx) => this.wallet.provider.getTransactionReceipt(tx))
+    )
+    receipts
+      .filter((receipt) => receipt.blockNumber + 1 <= currentBlock)
+      .forEach((tx) => this.pendingTransaction.delete(tx.transactionHash))
   }
 
+  /**
+   * Entry point to run from outside, interval load and send transaction
+   */
   async start() {
     const itr = async () => {
-      await this.sendTransaction();
+      await this.startOneTime()
       if (this.running) {
         this.pollingTimeout = setTimeout(itr, 3000)
       }
     }
-    this.running = true 
+    this.running = true
     itr()
   }
 
   async startOneTime() {
+    await this.removePendingTx()
     await this.sendTransaction()
   }
 }

@@ -61,7 +61,7 @@ describe('TransactionManager', function () {
     )
     await prover.init()
 
-    const transactionManager = new TransactionManager(signers[0], 5)
+    const transactionManager = new TransactionManager(signers[0], 2)
     await transactionManager.init()
 
     return {
@@ -79,12 +79,12 @@ describe('TransactionManager', function () {
   describe('Init success', function () {
     it('From address init success', async function () {
       const { transactionManager, signers } = await setup()
-      const fromAddress = await transactionManager.getFromAddress();
+      const fromAddress = await transactionManager.getFromAddress()
       expect(fromAddress).to.be.eq(signers[0].address)
     })
   })
 
-  describe('Send transaction', function() {
+  describe('Send transaction', function () {
     it('Push raw transaction success', async () => {
       const { counter, transactionManager } = await setup()
       const data = await counter.populateTransaction.incSimple()
@@ -101,6 +101,32 @@ describe('TransactionManager', function () {
       await transactionManager.startOneTime()
       const endNonce = await transactionManager.getNonce()
       expect(endNonce).to.be.eq(startNonce + 2)
+      // Increase block number to finalize the transaction
+      await ethers.provider.send('hardhat_mine', ['0x2'])
+      await transactionManager.startOneTime()
+      const { pendingSize } = transactionManager.getCurrentStats()
+      expect(pendingSize).to.be.eq(0)
+    })
+
+    it('Send transaction multiple time', async () => {
+      const { counter, transactionManager } = await setup()
+      const data = await counter.populateTransaction.incSimple()
+      await transactionManager.enqueueTransaction(data)
+      await transactionManager.enqueueTransaction(data)
+      await transactionManager.enqueueTransaction(data)
+      await transactionManager.enqueueTransaction(data)
+      await transactionManager.startOneTime()
+      // Increase block number to finalize the transaction
+      await ethers.provider.send('hardhat_mine', ['0x1'])
+      let { pendingSize, waitingSize } = transactionManager.getCurrentStats()
+      expect(pendingSize).to.be.eq(2)
+      expect(waitingSize).to.be.eq(2)
+      await transactionManager.startOneTime()
+      await ethers.provider.send('hardhat_mine', ['0x1'])
+      await transactionManager.removePendingTx()
+      ;({ pendingSize, waitingSize } = transactionManager.getCurrentStats())
+      expect(pendingSize).to.be.eq(0)
+      expect(waitingSize).to.be.eq(0)
     })
   })
 })
