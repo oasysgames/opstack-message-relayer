@@ -61,7 +61,7 @@ describe('TransactionManager', function () {
     )
     await prover.init()
 
-    const transactionManager = new TransactionManager(signers[0])
+    const transactionManager = new TransactionManager(signers[0], 5)
     await transactionManager.init()
 
     return {
@@ -86,10 +86,21 @@ describe('TransactionManager', function () {
 
   describe('Send transaction', function() {
     it('Push raw transaction success', async () => {
-      const { signers, counter, transactionManager } = await setup()
+      const { counter, transactionManager } = await setup()
       const data = await counter.populateTransaction.incSimple()
       await transactionManager.enqueueTransaction(data)
       await transactionManager.enqueueTransaction(data)
+    })
+
+    it('Send transaction success', async () => {
+      const { counter, transactionManager } = await setup()
+      const data = await counter.populateTransaction.incSimple()
+      const startNonce = await transactionManager.getNonce()
+      await transactionManager.enqueueTransaction(data)
+      await transactionManager.enqueueTransaction(data)
+      await transactionManager.startOneTime()
+      const endNonce = await transactionManager.getNonce()
+      expect(endNonce).to.be.eq(startNonce + 2)
     })
   })
 })

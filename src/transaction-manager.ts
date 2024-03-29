@@ -13,10 +13,20 @@ export class TransactionManager {
    * The fixed size of waiting transaction - the transaction that has not been sent yet
    */
   private waitingTransaction: FixedSizeQueue<PopulatedTransaction>
-
-  constructor(wallet: Signer) {
+  /**
+   * The fixed size of the pending transaction - the transaction that has been sent but not yet confirmed
+   */
+  private pendingTransaction: FixedSizeQueue<string>
+  /**
+   * The running state of the transaction manager
+   */
+  private running: boolean
+  private pollingTimeout: NodeJS.Timeout
+  constructor(wallet: Signer, maxPendingTxs) {
     this.wallet = wallet
     this.waitingTransaction = new FixedSizeQueue<PopulatedTransaction>(500)
+    this.pendingTransaction = new FixedSizeQueue<string>(maxPendingTxs)
+    this.running = false
   }
 
   /**
@@ -33,6 +43,10 @@ export class TransactionManager {
   async getFromAddress() {
     return await this.wallet.getAddress()
   }
+  
+  async getNonce() {
+    return await this.wallet.provider.getTransactionCount(this.wallet.getAddress())
+  }
 
   /**
    * Enqueue the transaction to waiting list
@@ -43,5 +57,53 @@ export class TransactionManager {
    */
   async enqueueTransaction(tx: PopulatedTransaction) {
     this.waitingTransaction.enqueue(tx)
+  }
+
+  /**
+   * Send the transaction in the waiting list, append it into pendingList
+   */
+  private async sendTransaction() {
+    // First, clear successfull pendingTx
+    while (!this.pendingTransaction.isEmpty()) {
+      const txHash = this.pendingTransaction.peek();
+      if (await this.isTxConfirmed(txHash)) {
+        // When a transaction is confirmed, remove it from pendingTransaction
+        this.pendingTransaction.dequeue()
+      } else {
+        // break when a transaction is not yet confirmed
+        break
+      }
+    }
+
+    while (!this.pendingTransaction.isFull()) {
+      if (this.waitingTransaction.isEmpty()) break;
+      const txData = this.waitingTransaction.dequeue()
+      const tx = await this.wallet.sendTransaction({
+        ...txData,
+        nonce: this.nonce,
+      })
+      this.nonce++
+      this.pendingTransaction.enqueue(tx.hash)
+    }
+  }
+
+  private async isTxConfirmed(txHash: string): Promise<boolean> {
+    const tx = await this.wallet.provider.getTransactionReceipt(txHash)
+    return tx.blockNumber !== null && tx.blockNumber != undefined
+  }
+
+  async start() {
+    const itr = async () => {
+      await this.sendTransaction();
+      if (this.running) {
+        this.pollingTimeout = setTimeout(itr, 3000)
+      }
+    }
+    this.running = true 
+    itr()
+  }
+
+  async startOneTime() {
+    await this.sendTransaction()
   }
 }
