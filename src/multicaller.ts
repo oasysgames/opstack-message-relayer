@@ -3,6 +3,7 @@ import { BigNumber, Contract, Signer } from 'ethers'
 import { CrossChainMessage } from '@eth-optimism/sdk'
 import Multicall2 from './contracts/Multicall2.json'
 import { splitArray } from './utils'
+import { TransactionManager } from './transaction-manager'
 
 export type Call = {
   target: string
@@ -39,6 +40,8 @@ export class Multicaller {
 
   public async multicall(
     calls: CallWithMeta[],
+    transactionManager: TransactionManager,
+    maxPendingTxs: number,
     callback: (hash: string, calls: CallWithMeta[]) => void | null
   ): Promise<CallWithMeta[]> {
     const requireSuccess = true
@@ -63,21 +66,42 @@ export class Multicaller {
 
       // split the array in half and recursively call
       const [firstHalf, secondHalf] = splitArray(calls)
-      const results = await this.multicall(firstHalf, callback)
-      return [...results, ...(await this.multicall(secondHalf, callback))]
+      const results = await this.multicall(
+        firstHalf,
+        transactionManager,
+        maxPendingTxs,
+        callback
+      )
+      return [
+        ...results,
+        ...(await this.multicall(
+          secondHalf,
+          transactionManager,
+          maxPendingTxs,
+          callback
+        )),
+      ]
     }
 
     const overrideOptions = {
       gasLimit: ~~(estimatedGas.toNumber() * (this.gasMultiplier || 1.0)),
     }
-    const tx = await this.contract.tryAggregate(
+    const tx = await this.contract.populateTransaction.tryAggregate(
       requireSuccess,
       this.convertToCalls(calls),
       overrideOptions
     )
-    await tx.wait()
+    while (maxPendingTxs > 0) {
+      await transactionManager.enqueueTransaction(tx)
+      maxPendingTxs--
+    }
+    const txs = await transactionManager.startOneTime()
 
-    if (callback) callback(tx.hash, calls)
+    console.log({ txs })
+
+    if (callback) {
+      txs.map((tx) => callback(tx.hash, calls))
+    }
 
     return []
   }

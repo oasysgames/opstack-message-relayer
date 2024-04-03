@@ -40,6 +40,7 @@ describe('Prover', function () {
     const messenger = new MockCrossChainForProver()
     messenger.init(counter)
     const logger = new MockLogger()
+    const maxPendingTxs = 1
 
     const postMessage = (succeeds: CallWithMeta[]) => {
       succeededCalldatas.push(...succeeds)
@@ -55,6 +56,8 @@ describe('Prover', function () {
       reorgSafetyDepth,
       messenger,
       multicaller,
+      signers[0],
+      maxPendingTxs,
       postMessage
     )
     await prover.init()

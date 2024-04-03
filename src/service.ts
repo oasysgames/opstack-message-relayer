@@ -132,6 +132,7 @@ export class MessageRelayerService extends BaseServiceV2<
         }
       })
     }
+    const maxPendingTxs = 2
     this.prover = new Prover(
       this.metrics,
       this.logger,
@@ -141,6 +142,8 @@ export class MessageRelayerService extends BaseServiceV2<
       this.options.reorgSafetyDepth,
       this.messenger,
       this.multicaller,
+      this.wallet,
+      maxPendingTxs,
       (succeeds: CallWithMeta[]) =>
         this.finalizeWorkerCreator?.postMessage(toMessages(succeeds))
     )

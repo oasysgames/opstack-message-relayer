@@ -84,6 +84,8 @@ export class TransactionManager {
    * Send the transaction in the waiting list, append it into pendingList
    */
   private async sendTransaction() {
+    const txs = [];
+    
     while (this.pendingTransaction.size < this.maxPendingTxs) {
       if (this.waitingTransaction.isEmpty()) break
       const txData = this.waitingTransaction.dequeue()
@@ -93,7 +95,9 @@ export class TransactionManager {
       })
       this.nonce++
       this.pendingTransaction.add(tx.hash)
+      txs.push(tx)
     }
+    return txs
   }
 
   /**
@@ -126,6 +130,6 @@ export class TransactionManager {
 
   async startOneTime() {
     await this.removePendingTx()
-    await this.sendTransaction()
+    return this.sendTransaction()
   }
 }

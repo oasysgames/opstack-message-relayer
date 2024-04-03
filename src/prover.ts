@@ -7,6 +7,8 @@ import {
 import { Multicaller, CallWithMeta } from './multicaller'
 import { readFromFile, writeToFile } from './utils'
 import { MessageRelayerMetrics, MessageRelayerState } from './service_types'
+import { TransactionManager } from './transaction-manager'
+import { Signer } from 'ethers'
 
 export default class Prover {
   public state: MessageRelayerState
@@ -21,6 +23,8 @@ export default class Prover {
   private multicaller: Multicaller
   private postMessage: (succeeds: CallWithMeta[]) => void
   private initalIteration: boolean = true
+  private transactionManager: TransactionManager
+  private maxPendingTxs: number
 
   constructor(
     metrics: MessageRelayerMetrics & StandardMetrics,
@@ -31,6 +35,8 @@ export default class Prover {
     reorgSafetyDepth: number,
     messenger: CrossChainMessenger,
     multicaller: Multicaller,
+    signer: Signer,
+    maxPendingTxs: number,
     postMessage: (succeeds: CallWithMeta[]) => void
   ) {
     this.stateFilePath = stateFilePath
@@ -43,6 +49,11 @@ export default class Prover {
     this.messenger = messenger
     this.multicaller = multicaller
     this.postMessage = postMessage
+    this.transactionManager = new TransactionManager(
+      signer,
+      maxPendingTxs
+    )
+    this.maxPendingTxs = maxPendingTxs
   }
 
   async init() {
@@ -56,6 +67,7 @@ export default class Prover {
       this.state.highestProvenL2 = this.fromL2TransactionIndex
       this.state.highestFinalizedL2 = this.fromL2TransactionIndex
     }
+    this.transactionManager.init()
     this.logger.info(`[prover] init: ${JSON.stringify(this.state)}`)
   }
 
@@ -189,7 +201,7 @@ export default class Prover {
       // - log the failed list with each error message
       this.handleMulticallResult(
         calldatas,
-        await this.multicaller?.multicall(calldatas, null)
+        await this.multicaller?.multicall(calldatas, this.transactionManager, this.maxPendingTxs, null)
       )
 
       // reset calldata list
@@ -231,7 +243,7 @@ export default class Prover {
     if (0 < calldatas.length) {
       this.handleMulticallResult(
         calldatas,
-        await this.multicaller?.multicall(calldatas, null)
+        await this.multicaller?.multicall(calldatas,this.transactionManager,this.maxPendingTxs, null)
       )
     }
 
