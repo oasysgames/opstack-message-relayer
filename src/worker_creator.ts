@@ -7,6 +7,7 @@ import {
   WorkerInitData,
 } from './finalize_worker'
 import { Multicaller } from './multicaller'
+import { Signer } from 'ethers'
 
 export default class FinalizeWorkCreator {
   private worker: Worker
@@ -29,6 +30,8 @@ export default class FinalizeWorkCreator {
     l1BlockTimeSeconds: number,
     finalizerPrivateKey: string,
     multicaller: Multicaller,
+    signer: Signer,
+    maxPendingTxs: number,
     messageHandler: (message: FinalizerMessage) => void,
     exitHandler: (code: number) => void
   ) {
@@ -50,6 +53,8 @@ export default class FinalizeWorkCreator {
       portalAddress,
       multicallTargetGas: multicaller.targetGas,
       gasMultiplier: multicaller.gasMultiplier,
+      signer,
+      maxPendingTxs
     }
 
     this.worker = new Worker('./src/worker.js', { workerData })

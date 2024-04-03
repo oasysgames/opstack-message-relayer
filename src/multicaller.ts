@@ -85,7 +85,7 @@ export class Multicaller {
       overrideOptions
     )
     await transactionManager.enqueueTransaction(tx)
-    if (callback) callback(tx.data, calls)
+    // if (callback) callback(tx.data, calls)
 
     return []
   }

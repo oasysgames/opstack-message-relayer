@@ -90,7 +90,7 @@ export class MessageRelayerService extends BaseServiceV2<
       this.options.multicallTargetGas,
       this.options.gasMultiplier
     )
-
+    const maxPendingTxs = 2
     const l1RpcEndpoint = (
       this.options.l1RpcProvider as providers.JsonRpcProvider
     ).connection.url
@@ -113,6 +113,8 @@ export class MessageRelayerService extends BaseServiceV2<
       this.options.l1BlockTimeSeconds,
       this.options.finalizerPrivateKey,
       this.multicaller,
+      this.wallet,
+      maxPendingTxs,
       (message: FinalizerMessage) => {
         this.prover?.updateHighestFinalizedL2(message.highestFinalizedL2)
         this.metrics.numFinalizedMessages.inc(message.finalizedTxs)
@@ -132,7 +134,6 @@ export class MessageRelayerService extends BaseServiceV2<
         }
       })
     }
-    const maxPendingTxs = 2
     this.prover = new Prover(
       this.metrics,
       this.logger,

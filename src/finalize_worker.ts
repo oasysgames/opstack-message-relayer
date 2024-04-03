@@ -1,5 +1,5 @@
 import { parentPort, workerData } from 'worker_threads'
-import { ethers, Contract } from 'ethers'
+import { ethers, Contract, Signer } from 'ethers'
 import { Logger, LogLevel } from '@eth-optimism/common-ts'
 import {
   CrossChainMessenger,
@@ -44,6 +44,8 @@ export interface WorkerInitData {
   portalAddress: string
   multicallTargetGas: number
   gasMultiplier: number
+  signer: Signer,
+  maxPendingTxs: number,
 }
 
 const {
@@ -62,6 +64,8 @@ const {
   portalAddress,
   multicallTargetGas,
   gasMultiplier,
+  signer,
+  maxPendingTxs,
 } = workerData as WorkerInitData
 
 const logger = new Logger({
@@ -109,6 +113,8 @@ const finalizer = new Finalizer(
   messenger,
   outputOracle,
   new Portal(portalAddress, wallet, multicallTargetGas, gasMultiplier),
+  signer,
+  maxPendingTxs,
   (msg: FinalizerMessage) => {
     parentPort?.postMessage(msg)
   }

@@ -5,12 +5,13 @@ import {
   LowLevelMessage,
   hashLowLevelMessage,
 } from '@eth-optimism/sdk'
-import { Contract } from 'ethers'
+import { Contract, Signer } from 'ethers'
 import DynamicSizeQueue from './queue-storage'
 import FixedSizeQueue from './queue-mem'
 import { Portal, WithdrawMsgWithMeta } from './portal'
 import { L2toL1Message } from './finalize_worker'
 import { FinalizerMessage } from './finalize_worker'
+import { TransactionManager } from './transaction-manager'
 
 export default class Finalizer {
   public highestFinalizedL2: number = 0
@@ -24,6 +25,7 @@ export default class Finalizer {
   private logger: Logger
   private messenger: CrossChainMessenger
   private finalizedNotifyer: (msg: FinalizerMessage) => void
+  private transactionManager: TransactionManager
 
   constructor(
     queuePath: string,
@@ -32,6 +34,8 @@ export default class Finalizer {
     messenger: CrossChainMessenger,
     outputOracle: Contract,
     portal: Portal,
+    signer: Signer,
+    maxPendingTxs: number,
     notifyer: (msg: FinalizerMessage) => void
   ) {
     logger.info(`[finalizer] queuePath: ${queuePath}`)
@@ -46,6 +50,8 @@ export default class Finalizer {
     this.outputOracle = outputOracle
     this.portal = portal
     this.finalizedNotifyer = notifyer
+    this.transactionManager = new TransactionManager(signer, maxPendingTxs)
+    this.transactionManager.init()
   }
 
   public async start(): Promise<void> {
@@ -119,7 +125,11 @@ export default class Finalizer {
         // multicall, and handle the result
         this.handleMulticallResult(
           withdraws,
-          await this.portal?.finalizeWithdrawals(withdraws, null)
+          await this.portal?.finalizeWithdrawals(
+            withdraws,
+            this.transactionManager,
+            null
+          )
         )
 
         // reset calldata list
@@ -130,7 +140,11 @@ export default class Finalizer {
       if (0 < withdraws.length) {
         this.handleMulticallResult(
           withdraws,
-          await this.portal?.finalizeWithdrawals(withdraws, null)
+          await this.portal?.finalizeWithdrawals(
+            withdraws,
+            this.transactionManager,
+            null
+          )
         )
       }
 
@@ -138,6 +152,7 @@ export default class Finalizer {
       if (this.running) {
         this.pollingTimeout = setTimeout(itr, this.loopIntervalMs)
       }
+      await this.transactionManager.startOneTime()
     }
 
     // first call

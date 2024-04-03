@@ -30,6 +30,7 @@ describe('Finalizer', function () {
     //   ).toString()
     // )
     // init portal
+    const maxPendingTxs = 1
     const portal = new Portal(
       portalContract.address,
       signers[0],
@@ -47,6 +48,8 @@ describe('Finalizer', function () {
       messenger,
       oracleContract,
       portal,
+      signers[0],
+      maxPendingTxs,
       () => {}
     )
     finalizer.start()
