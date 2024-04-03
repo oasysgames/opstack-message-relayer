@@ -41,7 +41,6 @@ export class Multicaller {
   public async multicall(
     calls: CallWithMeta[],
     transactionManager: TransactionManager,
-    maxPendingTxs: number,
     callback: (hash: string, calls: CallWithMeta[]) => void | null
   ): Promise<CallWithMeta[]> {
     const requireSuccess = true
@@ -69,17 +68,11 @@ export class Multicaller {
       const results = await this.multicall(
         firstHalf,
         transactionManager,
-        maxPendingTxs,
         callback
       )
       return [
         ...results,
-        ...(await this.multicall(
-          secondHalf,
-          transactionManager,
-          maxPendingTxs,
-          callback
-        )),
+        ...(await this.multicall(secondHalf, transactionManager, callback)),
       ]
     }
 
@@ -91,17 +84,8 @@ export class Multicaller {
       this.convertToCalls(calls),
       overrideOptions
     )
-    while (maxPendingTxs > 0) {
-      await transactionManager.enqueueTransaction(tx)
-      maxPendingTxs--
-    }
-    const txs = await transactionManager.startOneTime()
-
-    console.log({ txs })
-
-    if (callback) {
-      txs.map((tx) => callback(tx.hash, calls))
-    }
+    await transactionManager.enqueueTransaction(tx)
+    if (callback) callback(tx.data, calls)
 
     return []
   }

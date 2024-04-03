@@ -25,7 +25,6 @@ describe('Multicaller', function () {
     // set single gas call
     multicaller.singleCallGas = singleCallGas
     const maxPendingTxs = 1
-
     const transactionManager = new TransactionManager(signers[0], maxPendingTxs)
     return {
       signers,
@@ -35,7 +34,6 @@ describe('Multicaller', function () {
       callDataFail,
       singleCallGas,
       transactionManager,
-      maxPendingTxs,
     }
   }
 
@@ -50,36 +48,21 @@ describe('Multicaller', function () {
 
   describe('multicall', function () {
     it('succeed: less than gas limit', async function () {
-      const {
-        counter,
-        multicaller,
-        callData,
-        transactionManager,
-        maxPendingTxs,
-      } = await setup()
+      const { counter, multicaller, callData, transactionManager } =
+        await setup()
       const target = counter.address
       const calls: CallWithMeta[] = []
       for (let i = 0; i < 3; i++) {
         calls.push({ target, callData } as CallWithMeta)
       }
-      await multicaller.multicall(
-        calls,
-        transactionManager,
-        maxPendingTxs,
-        null
-      )
+      await multicaller.multicall(calls, transactionManager, null)
 
       expect(await counter.get()).to.equal(calls.length)
     })
 
     it('succeed: more than gas limit', async function () {
-      const {
-        counter,
-        multicaller,
-        callData,
-        transactionManager,
-        maxPendingTxs,
-      } = await setup()
+      const { counter, multicaller, callData, transactionManager } =
+        await setup()
       const target = counter.address
       const calls: CallWithMeta[] = []
       for (let i = 0; i < 20; i++) {
@@ -87,12 +70,7 @@ describe('Multicaller', function () {
       }
 
       multicaller.gasMultiplier = 1
-      await multicaller.multicall(
-        calls,
-        transactionManager,
-        maxPendingTxs,
-        null
-      )
+      await multicaller.multicall(calls, transactionManager, null)
 
       expect(await counter.get()).to.equal(calls.length)
     })
@@ -104,7 +82,6 @@ describe('Multicaller', function () {
         callData,
         callDataFail,
         transactionManager,
-        maxPendingTxs,
       } = await setup()
       const target = counter.address
       const revertCall = { target, callData: callDataFail } as CallWithMeta
@@ -116,7 +93,6 @@ describe('Multicaller', function () {
       const faileds = await multicaller.multicall(
         calls,
         transactionManager,
-        maxPendingTxs,
         null
       )
 
@@ -131,7 +107,6 @@ describe('Multicaller', function () {
         callData,
         callDataFail,
         transactionManager,
-        maxPendingTxs,
       } = await setup()
       const target = counter.address
       const revertCall = { target, callData: callDataFail } as CallWithMeta
@@ -143,7 +118,6 @@ describe('Multicaller', function () {
       const faileds = await multicaller.multicall(
         calls,
         transactionManager,
-        maxPendingTxs,
         null
       )
 

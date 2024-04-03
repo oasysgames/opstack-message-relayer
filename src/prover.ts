@@ -24,7 +24,6 @@ export default class Prover {
   private postMessage: (succeeds: CallWithMeta[]) => void
   private initalIteration: boolean = true
   private transactionManager: TransactionManager
-  private maxPendingTxs: number
 
   constructor(
     metrics: MessageRelayerMetrics & StandardMetrics,
@@ -49,11 +48,7 @@ export default class Prover {
     this.messenger = messenger
     this.multicaller = multicaller
     this.postMessage = postMessage
-    this.transactionManager = new TransactionManager(
-      signer,
-      maxPendingTxs
-    )
-    this.maxPendingTxs = maxPendingTxs
+    this.transactionManager = new TransactionManager(signer, maxPendingTxs)
   }
 
   async init() {
@@ -201,7 +196,11 @@ export default class Prover {
       // - log the failed list with each error message
       this.handleMulticallResult(
         calldatas,
-        await this.multicaller?.multicall(calldatas, this.transactionManager, this.maxPendingTxs, null)
+        await this.multicaller?.multicall(
+          calldatas,
+          this.transactionManager,
+          null
+        )
       )
 
       // reset calldata list
@@ -243,7 +242,11 @@ export default class Prover {
     if (0 < calldatas.length) {
       this.handleMulticallResult(
         calldatas,
-        await this.multicaller?.multicall(calldatas,this.transactionManager,this.maxPendingTxs, null)
+        await this.multicaller?.multicall(
+          calldatas,
+          this.transactionManager,
+          null
+        )
       )
     }
 
@@ -352,5 +355,9 @@ export default class Prover {
 
   public async writeStateToFile(): Promise<void> {
     await writeToFile(this.stateFilePath, this.state)
+  }
+
+  public async startProver() {
+    return this.transactionManager.startOneTime()
   }
 }

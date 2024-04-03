@@ -157,6 +157,7 @@ describe('Prover', function () {
       ]
       // @ts-ignore
       const returns = await prover.handleSingleBlock(height, calldatas)
+      await prover.startProver()
 
       expect(returns.length).to.equal(1)
       expect(returns[0].txHash).to.equal('0x5')

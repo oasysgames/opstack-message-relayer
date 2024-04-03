@@ -130,6 +130,6 @@ export class TransactionManager {
 
   async startOneTime() {
     await this.removePendingTx()
-    return this.sendTransaction()
+    await this.sendTransaction()
   }
 }
