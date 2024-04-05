@@ -123,6 +123,8 @@ describe('Finalizer', function () {
       finalizer.appendMessage(...messages)
 
       await sleep(3000)
+      await ethers.provider.send('hardhat_mine', ['0x2'])
+      finalizer.start()
 
       expect(finalizer.queue.count).to.equal(0)
       expect(finalizer.highestFinalizedL2).to.equal(3)
