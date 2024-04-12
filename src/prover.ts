@@ -3,6 +3,7 @@ import {
   CrossChainMessenger,
   MessageStatus,
   CrossChainMessage,
+  MessageDirection,
 } from '@eth-optimism/sdk'
 import { Multicaller, CallWithMeta } from './multicaller'
 import { readFromFile, writeToFile } from './utils'
@@ -116,20 +117,29 @@ export default class Prover {
     for (let j = 0; j < block.transactions.length; j++) {
       const txHash = block.transactions[j].hash
 
-      let message: CrossChainMessage
-      try {
-        message = await this.messenger.toCrossChainMessage(txHash)
-      } catch (err) {
-        // skip if the tx is not a cross-chain message
-        const noWithdrawMsg = 'withdrawal index 0 out of bounds'
-        if (err.message.includes(noWithdrawMsg)) {
-          this.logger.debug(`[prover] skip txHash: ${txHash}`)
-          continue
-        }
-        // otherwise, throw the error
-        throw err
+      // Don't use toCrossChainMessage, as it call L1 endpont leading to slow down
+      // try {
+      //   message = await this.messenger.toCrossChainMessage(txHash)
+      // } catch (err) {
+      //   // skip if the tx is not a cross-chain message
+      //   const noWithdrawMsg = 'withdrawal index 0 out of bounds'
+      //   if (err.message.includes(noWithdrawMsg)) {
+      //     this.logger.debug(`[prover] skip txHash: ${txHash}`)
+      //     continue
+      //   }
+      //   // otherwise, throw the error
+      //   throw err
+      // }
+      const messages = await this.messenger.getMessagesByTransaction(txHash, {
+        direction: MessageDirection.L2_TO_L1,
+      })
+      if (messages.length === 0) {
+        this.logger.debug(`[prover] skip txHash: ${txHash}`)
+        continue
       }
 
+      // pick the first message from the list, as follow the code inside of messenger.toCrossChainMessage
+      const message: CrossChainMessage = messages[0]
       const status = await this.messenger.getMessageStatus(message)
       this.logger.debug(
         `[prover] txHash: ${txHash}, status: ${MessageStatus[status]})`

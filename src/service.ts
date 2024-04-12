@@ -159,6 +159,7 @@ export class MessageRelayerService extends BaseServiceV2<
 
   protected async main(): Promise<void> {
     await this.prover?.handleMultipleBlock()
+    await this.prover.writeState()
   }
 
   // override to write the last state
