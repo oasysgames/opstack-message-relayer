@@ -2,14 +2,14 @@ import { parentPort, workerData } from 'worker_threads'
 import { ethers, Contract } from 'ethers'
 import { Logger, LogLevel } from '@eth-optimism/common-ts'
 import {
+  DeepPartial,
+  OEContractsLike,
   CrossChainMessenger,
   CrossChainMessage,
-  DEFAULT_L2_CONTRACT_ADDRESSES,
 } from '@eth-optimism/sdk'
 import IOasysL2OutputOracle from './contracts/IOasysL2OutputOracle.json'
 import Finalizer from './finalizer'
 import { Portal } from './portal'
-import { ZERO_ADDRESS } from './utils'
 
 export type L2toL1Message = {
   blockHeight: number
@@ -31,9 +31,6 @@ export interface WorkerInitData {
   queuePath: string
   loopIntervalMs: number
   logLevel: LogLevel // for logger
-  addressManagerAddress: string // for cross chain messenger
-  l1CrossDomainMessengerAddress: string
-  outputOracleAddress: string
   l1RpcEndpoint: string
   l2RpcEndpoint: string
   l1ChainId: number
@@ -41,28 +38,29 @@ export interface WorkerInitData {
   l1BlockTimeSeconds: number
   finalizerPrivateKey: string
   // for portal
-  portalAddress: string
   multicallTargetGas: number
   gasMultiplier: number
+  // json encoded contract list for the CrossChainMessenger
+  contractsJSON: string
 }
 
 const {
   queuePath,
   loopIntervalMs,
   logLevel,
-  addressManagerAddress,
-  l1CrossDomainMessengerAddress,
-  outputOracleAddress,
   l1RpcEndpoint,
   l2RpcEndpoint,
   l1ChainId,
   l2ChainId,
   l1BlockTimeSeconds,
   finalizerPrivateKey,
-  portalAddress,
   multicallTargetGas,
   gasMultiplier,
 } = workerData as WorkerInitData
+
+const contracts = JSON.parse(
+  workerData.contractsJSON
+) as DeepPartial<OEContractsLike>
 
 const logger = new Logger({
   name: 'finalizer_worker',
@@ -80,24 +78,12 @@ const messenger = new CrossChainMessenger({
   l1ChainId,
   l2ChainId,
   l1BlockTimeSeconds,
-  contracts: {
-    l1: {
-      AddressManager: addressManagerAddress,
-      L1CrossDomainMessenger: l1CrossDomainMessengerAddress,
-      L1StandardBridge: ZERO_ADDRESS, // dummy address
-      StateCommitmentChain: ZERO_ADDRESS, // dummy address
-      CanonicalTransactionChain: ZERO_ADDRESS, // dummy address
-      BondManager: ZERO_ADDRESS, // dummy address
-      OptimismPortal: portalAddress,
-      L2OutputOracle: outputOracleAddress,
-    },
-    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
-  },
+  contracts,
   bedrock: true,
 })
 
 const outputOracle = new Contract(
-  outputOracleAddress,
+  contracts.l1.L2OutputOracle as string,
   IOasysL2OutputOracle.abi,
   wallet
 )
@@ -108,7 +94,12 @@ const finalizer = new Finalizer(
   logger,
   messenger,
   outputOracle,
-  new Portal(portalAddress, wallet, multicallTargetGas, gasMultiplier),
+  new Portal(
+    contracts.l1.OptimismPortal as string,
+    wallet,
+    multicallTargetGas,
+    gasMultiplier
+  ),
   (msg: FinalizerMessage) => {
     parentPort?.postMessage(msg)
   }

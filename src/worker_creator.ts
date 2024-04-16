@@ -1,12 +1,13 @@
 import { Worker } from 'worker_threads'
-import { Logger, LogLevel } from '@eth-optimism/common-ts'
-import {
+import { Logger } from '@eth-optimism/common-ts'
+import type {
   FinalizerMessage,
   L2toL1Message,
   CloseMessage,
   WorkerInitData,
 } from './finalize_worker'
 import { Multicaller } from './multicaller'
+import { DeepPartial, OEContractsLike } from '@eth-optimism/sdk'
 
 export default class FinalizeWorkCreator {
   private worker: Worker
@@ -14,49 +15,41 @@ export default class FinalizeWorkCreator {
   private terminating = false
 
   constructor(
-    logger: Logger,
-    queuePath: string,
-    loopIntervalMs: number,
-    logLevel: LogLevel,
-    addressManagerAddress: string,
-    l1CrossDomainMessengerAddress: string,
-    outputOracleAddress: string,
-    portalAddress: string,
-    l1RpcEndpoint: string,
-    l2RpcEndpoint: string,
-    l1ChainId: number,
-    l2ChainId: number,
-    l1BlockTimeSeconds: number,
-    finalizerPrivateKey: string,
-    multicaller: Multicaller,
-    messageHandler: (message: FinalizerMessage) => void,
-    exitHandler: (code: number) => void
+    opts: Omit<
+      WorkerInitData,
+      'contractsJSON' | 'multicallTargetGas' | 'gasMultiplier'
+    > & {
+      logger: Logger
+      contracts: DeepPartial<OEContractsLike>
+      multicaller: Multicaller
+      messageHandler: (message: FinalizerMessage) => void
+      exitHandler: (code: number) => void
+    }
   ) {
-    this.logger = logger
+    this.logger = opts.logger
 
+    // Note: Passing non-primitive values(number or string)
+    // to the worker will cause it to crash.
     const workerData: WorkerInitData = {
-      queuePath,
-      loopIntervalMs,
-      logLevel,
-      addressManagerAddress,
-      l1CrossDomainMessengerAddress,
-      outputOracleAddress,
-      l1RpcEndpoint,
-      l2RpcEndpoint,
-      l1ChainId,
-      l2ChainId,
-      l1BlockTimeSeconds,
-      finalizerPrivateKey,
-      portalAddress,
-      multicallTargetGas: multicaller.targetGas,
-      gasMultiplier: multicaller.gasMultiplier,
+      queuePath: opts.queuePath,
+      loopIntervalMs: opts.loopIntervalMs,
+      logLevel: opts.logLevel,
+      contractsJSON: JSON.stringify(opts.contracts),
+      l1RpcEndpoint: opts.l1RpcEndpoint,
+      l2RpcEndpoint: opts.l2RpcEndpoint,
+      l1ChainId: opts.l1ChainId,
+      l2ChainId: opts.l2ChainId,
+      l1BlockTimeSeconds: opts.l1BlockTimeSeconds,
+      finalizerPrivateKey: opts.finalizerPrivateKey,
+      multicallTargetGas: opts.multicaller.targetGas,
+      gasMultiplier: opts.multicaller.gasMultiplier,
     }
 
     this.worker = new Worker('./src/worker.js', { workerData })
 
     this.worker.on('message', (message: FinalizerMessage) => {
       this.logger.info('[worker] received message', message)
-      messageHandler(message)
+      opts.messageHandler(message)
     })
 
     this.worker.on('error', (err: Error) => {
@@ -70,7 +63,7 @@ export default class FinalizeWorkCreator {
       if (code !== 0) {
         this.logger.error(`[worker] worker stopped with exit code: ${code}`)
       }
-      exitHandler(code)
+      opts.exitHandler(code)
     })
   }
 

@@ -10,6 +10,7 @@ export type MessageRelayerOptions = {
   fromL2TransactionIndex?: number
   addressManager?: string
   l1CrossDomainMessenger?: string
+  l1StandardBridge?: string
   portalAddress?: string
   OutputOracle?: string
   multicallAddress?: string
@@ -47,6 +48,10 @@ export const serviceOptionsSpec: any = {
   l1CrossDomainMessenger: {
     validator: validators.str,
     desc: 'Address of the Proxy__OVM_L1CrossDomainMessenger on Layer1.',
+  },
+  l1StandardBridge: {
+    validator: validators.str,
+    desc: 'Address of the Proxy__OVM_L1StandardBridge on Layer1.',
   },
   portalAddress: {
     validator: validators.str,
