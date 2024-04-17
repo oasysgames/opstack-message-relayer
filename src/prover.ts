@@ -36,7 +36,8 @@ export default class Prover {
     multicaller: Multicaller,
     signer: Signer,
     maxPendingTxs: number,
-    postMessage: (succeeds: CallWithMeta[]) => void
+    postMessage: (succeeds: CallWithMeta[]) => void,
+    confirmationNumber?: number,
   ) {
     this.stateFilePath = stateFilePath
     this.metrics = metrics
@@ -48,7 +49,7 @@ export default class Prover {
     this.messenger = messenger
     this.multicaller = multicaller
     this.postMessage = postMessage
-    this.transactionManager = new TransactionManager(signer, maxPendingTxs)
+    this.transactionManager = new TransactionManager(signer, maxPendingTxs, confirmationNumber)
   }
 
   async init() {
@@ -355,9 +356,5 @@ export default class Prover {
 
   public async writeStateToFile(): Promise<void> {
     await writeToFile(this.stateFilePath, this.state)
-  }
-
-  public async startProver() {
-    return this.transactionManager.startOneTime()
   }
 }

@@ -35,13 +35,16 @@ export class TransactionManager {
   private stopping: boolean
   private maxPendingTxs: number
   private pollingTimeout: NodeJS.Timeout
-  constructor(wallet: Signer, maxPendingTxs: number | undefined) {
+  private confirmationNumber: number
+  constructor(wallet: Signer, maxPendingTxs: number | undefined, confirmationNumber?: number | undefined ) {
     if (maxPendingTxs && maxPendingTxs <= 1) throw new Error("maxPendingTxs must be greater than 1")
     this.wallet = wallet
     this.waitingTransaction = new FixedSizeQueue<PopulatedTransaction>(maxPendingTxs*10)
     this.pendingTransaction = new Set<string>()
     this.running = false
     this.maxPendingTxs = maxPendingTxs || 1
+    this.stopping = false
+    this.confirmationNumber = confirmationNumber ?? 1
   }
 
   /**
@@ -182,7 +185,7 @@ export class TransactionManager {
       txs.map((tx) => this.wallet.provider.getTransactionReceipt(tx))
     )
     receipts
-      .filter((receipt) => receipt.blockNumber + 1 <= currentBlock)
+      .filter((receipt) => receipt.blockNumber + this.confirmationNumber <= currentBlock)
       .forEach((tx) => {
         // notify the subscriber
         this.notifySubscribers(tx)

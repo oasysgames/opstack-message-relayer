@@ -40,7 +40,8 @@ describe('Prover', function () {
     const messenger = new MockCrossChainForProver()
     messenger.init(counter)
     const logger = new MockLogger()
-    const maxPendingTxs = 1
+    const maxPendingTxs = 2
+    const confirmationNumber = 0
 
     const postMessage = (succeeds: CallWithMeta[]) => {
       succeededCalldatas.push(...succeeds)
@@ -58,7 +59,8 @@ describe('Prover', function () {
       multicaller,
       signers[0],
       maxPendingTxs,
-      postMessage
+      postMessage,
+      confirmationNumber
     )
     await prover.init()
 
@@ -157,8 +159,6 @@ describe('Prover', function () {
       ]
       // @ts-ignore
       const returns = await prover.handleSingleBlock(height, calldatas)
-      await prover.startProver()
-
       expect(returns.length).to.equal(1)
       expect(returns[0].txHash).to.equal('0x5')
       expect(prover.highestProvenL2()).to.equal(height)

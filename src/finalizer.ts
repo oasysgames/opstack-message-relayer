@@ -36,7 +36,8 @@ export default class Finalizer {
     portal: Portal,
     signer: Signer,
     maxPendingTxs: number,
-    notifyer: (msg: FinalizerMessage) => void
+    notifyer: (msg: FinalizerMessage) => void,
+    confirmationNumber?: number,
   ) {
     logger.info(`[finalizer] queuePath: ${queuePath}`)
     if (queuePath !== '') {
@@ -50,7 +51,7 @@ export default class Finalizer {
     this.outputOracle = outputOracle
     this.portal = portal
     this.finalizedNotifyer = notifyer
-    this.transactionManager = new TransactionManager(signer, maxPendingTxs)
+    this.transactionManager = new TransactionManager(signer, maxPendingTxs, confirmationNumber)
     this.transactionManager.init()
   }
 
@@ -152,7 +153,6 @@ export default class Finalizer {
       if (this.running) {
         this.pollingTimeout = setTimeout(itr, this.loopIntervalMs)
       }
-      await this.transactionManager.startOneTime()
     }
 
     // first call

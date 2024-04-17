@@ -43,6 +43,7 @@ describe('TransactionManager', function () {
     messenger.init(counter)
     const logger = new MockLogger()
     const maxPendingTxs = 2
+    const confirmationNumber = 0
     const postMessage = (succeeds: CallWithMeta[]) => {
       succeededCalldatas.push(...succeeds)
     }
@@ -63,7 +64,7 @@ describe('TransactionManager', function () {
     )
     await prover.init()
 
-    const transactionManager = new TransactionManager(signers[0], 2)
+    const transactionManager = new TransactionManager(signers[0], maxPendingTxs, confirmationNumber)
     await transactionManager.init()
 
     return {
@@ -100,12 +101,10 @@ describe('TransactionManager', function () {
       const startNonce = await transactionManager.getNonce()
       await transactionManager.enqueueTransaction(data)
       await transactionManager.enqueueTransaction(data)
-      await transactionManager.startOneTime()
       const endNonce = await transactionManager.getNonce()
       expect(endNonce).to.be.eq(startNonce + 2)
       // Increase block number to finalize the transaction
       await ethers.provider.send('hardhat_mine', ['0x2'])
-      await transactionManager.startOneTime()
       const { pendingSize } = transactionManager.getCurrentStats()
       expect(pendingSize).to.be.eq(0)
     })
@@ -117,15 +116,12 @@ describe('TransactionManager', function () {
       await transactionManager.enqueueTransaction(data)
       await transactionManager.enqueueTransaction(data)
       await transactionManager.enqueueTransaction(data)
-      await transactionManager.startOneTime()
       // Increase block number to finalize the transaction
       await ethers.provider.send('hardhat_mine', ['0x1'])
       let { pendingSize, waitingSize } = transactionManager.getCurrentStats()
       expect(pendingSize).to.be.eq(2)
       expect(waitingSize).to.be.eq(2)
-      await transactionManager.startOneTime()
       await ethers.provider.send('hardhat_mine', ['0x1'])
-      await transactionManager.removePendingTx()
       ;({ pendingSize, waitingSize } = transactionManager.getCurrentStats())
       expect(pendingSize).to.be.eq(0)
       expect(waitingSize).to.be.eq(0)

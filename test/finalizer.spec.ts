@@ -30,7 +30,8 @@ describe('Finalizer', function () {
     //   ).toString()
     // )
     // init portal
-    const maxPendingTxs = 1
+    const maxPendingTxs = 2
+    const confirmationNumber = 0
     const portal = new Portal(
       portalContract.address,
       signers[0],
@@ -50,7 +51,8 @@ describe('Finalizer', function () {
       portal,
       signers[0],
       maxPendingTxs,
-      () => {}
+      () => {},
+      confirmationNumber,
     )
     finalizer.start()
 
