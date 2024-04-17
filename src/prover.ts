@@ -37,7 +37,7 @@ export default class Prover {
     signer: Signer,
     maxPendingTxs: number,
     postMessage: (succeeds: CallWithMeta[]) => void,
-    confirmationNumber?: number,
+    confirmationNumber?: number
   ) {
     this.stateFilePath = stateFilePath
     this.metrics = metrics
@@ -49,7 +49,11 @@ export default class Prover {
     this.messenger = messenger
     this.multicaller = multicaller
     this.postMessage = postMessage
-    this.transactionManager = new TransactionManager(signer, maxPendingTxs, confirmationNumber)
+    this.transactionManager = new TransactionManager(
+      signer,
+      maxPendingTxs,
+      confirmationNumber
+    )
   }
 
   async init() {
@@ -195,13 +199,13 @@ export default class Prover {
       // - update the checked L2 height with succeeded calls
       // - post the proven messages to the finalizer
       // - log the failed list with each error message
-      this.handleMulticallResult(
+      await this.multicaller?.multicall(
         calldatas,
-        await this.multicaller?.multicall(
-          calldatas,
-          this.transactionManager,
-          null
-        )
+        this.transactionManager,
+        (calls) => this.handleMulticallResult(calls),
+        (calls) => {
+          this.handleMulticallError(calls)
+        }
       )
 
       // reset calldata list
@@ -241,13 +245,15 @@ export default class Prover {
 
     // flush the left calldata
     if (0 < calldatas.length) {
-      this.handleMulticallResult(
+      await this.multicaller?.multicall(
         calldatas,
-        await this.multicaller?.multicall(
-          calldatas,
-          this.transactionManager,
-          null
-        )
+        this.transactionManager,
+        (calls) => {
+          this.handleMulticallResult(calls)
+        },
+        (calls) => {
+          this.handleMulticallError(calls)
+        }
       )
     }
 
@@ -257,13 +263,7 @@ export default class Prover {
     }
   }
 
-  protected handleMulticallResult(
-    calleds: CallWithMeta[],
-    faileds: CallWithMeta[]
-  ): void {
-    const failedIds = new Set(faileds.map((failed) => failed.txHash))
-    const succeeds = calleds.filter((call) => !failedIds.has(call.txHash))
-
+  protected handleMulticallResult(succeeds: CallWithMeta[]): void {
     if (0 < succeeds.length) {
       this.logger.info(
         `[prover] succeeded(${succeeds.length}) txHash: ${succeeds.map(
@@ -278,7 +278,10 @@ export default class Prover {
       this.postMessage(succeeds)
     }
 
-    // record log the failed list with each error message
+  }
+
+  protected handleMulticallError(faileds: CallWithMeta[]) {
+    // // record log the failed list with each error message
     for (const fail of faileds) {
       this.logger.warn(
         `[prover] failed to prove: ${fail.txHash}, err: ${fail.err.message}`

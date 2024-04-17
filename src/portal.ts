@@ -61,7 +61,8 @@ export class Portal {
   public async finalizeWithdrawals(
     withdraws: WithdrawMsgWithMeta[],
     transactionManager: TransactionManager,
-    callback: (hash: string, withdraws: WithdrawMsgWithMeta[]) => void
+    callbackSuccess: (withdraws: WithdrawMsgWithMeta[]) => void,
+    callbackError: (calls: WithdrawMsgWithMeta[]) => void | null
   ): Promise<WithdrawMsgWithMeta[]> {
     const calls = this.convertToCall(withdraws)
     let estimatedGas: BigNumber
@@ -87,14 +88,16 @@ export class Portal {
       const results = await this.finalizeWithdrawals(
         firstHalf,
         transactionManager,
-        callback
+        callbackSuccess,
+        callbackError
       )
       return [
         ...results,
         ...(await this.finalizeWithdrawals(
           secondHalf,
           transactionManager,
-          callback
+          callbackSuccess,
+          callbackError
         )),
       ]
     }
@@ -102,12 +105,17 @@ export class Portal {
     const overrideOptions = {
       gasLimit: ~~(estimatedGas.toNumber() * (this.gasMultiplier || 1.0)),
     }
-    const tx = await this.contract.populateTransaction.finalizeWithdrawalTransactions(
-      calls,
-      overrideOptions
+    const tx =
+      await this.contract.populateTransaction.finalizeWithdrawalTransactions(
+        calls,
+        overrideOptions
+      )
+    const txData = { ...tx, originData: withdraws }
+    await transactionManager.enqueueTransaction(
+      txData,
+      callbackSuccess,
+      callbackError
     )
-    await transactionManager.enqueueTransaction(tx)
-    // if (callback) callback(tx.hash, withdraws)
 
     return []
   }

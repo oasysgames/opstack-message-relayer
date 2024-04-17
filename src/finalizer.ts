@@ -124,13 +124,11 @@ export default class Finalizer {
         }
 
         // multicall, and handle the result
-        this.handleMulticallResult(
+        await this.portal?.finalizeWithdrawals(
           withdraws,
-          await this.portal?.finalizeWithdrawals(
-            withdraws,
-            this.transactionManager,
-            null
-          )
+          this.transactionManager,
+          (txs) => this.handleMulticallResult(txs),
+          (txs) => this.handleMulticallError(txs)
         )
 
         // reset calldata list
@@ -139,13 +137,11 @@ export default class Finalizer {
 
       // flush the rest of withdraws
       if (0 < withdraws.length) {
-        this.handleMulticallResult(
+        await this.portal?.finalizeWithdrawals(
           withdraws,
-          await this.portal?.finalizeWithdrawals(
-            withdraws,
-            this.transactionManager,
-            null
-          )
+          this.transactionManager,
+          (txs) => this.handleMulticallResult(txs),
+          (txs) => this.handleMulticallError(txs)
         )
       }
 
@@ -161,12 +157,8 @@ export default class Finalizer {
   }
 
   protected handleMulticallResult(
-    calleds: WithdrawMsgWithMeta[],
-    faileds: WithdrawMsgWithMeta[]
+    succeeds: WithdrawMsgWithMeta[],
   ): void {
-    const failedIds = new Set(faileds.map((failed) => failed.txHash))
-    const succeeds = calleds.filter((call) => !failedIds.has(call.txHash))
-
     if (0 < succeeds.length) {
       this.logger.info(
         `[finalizer] succeeded(${succeeds.length}) txHash: ${succeeds.map(
@@ -183,7 +175,9 @@ export default class Finalizer {
         })
       }
     }
+  }
 
+  protected handleMulticallError(faileds: WithdrawMsgWithMeta[]) {
     // log the failed list with each error message
     for (const fail of faileds) {
       this.logger.warn(

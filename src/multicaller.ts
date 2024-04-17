@@ -41,7 +41,8 @@ export class Multicaller {
   public async multicall(
     calls: CallWithMeta[],
     transactionManager: TransactionManager,
-    callback: (hash: string, calls: CallWithMeta[]) => void | null
+    callbackSuccess: (calls: CallWithMeta[]) => void | null,
+    callbackError: (calls: CallWithMeta[]) => void | null
   ): Promise<CallWithMeta[]> {
     const requireSuccess = true
     let estimatedGas: BigNumber
@@ -68,11 +69,17 @@ export class Multicaller {
       const results = await this.multicall(
         firstHalf,
         transactionManager,
-        callback
+        callbackSuccess,
+        callbackError
       )
       return [
         ...results,
-        ...(await this.multicall(secondHalf, transactionManager, callback)),
+        ...(await this.multicall(
+          secondHalf,
+          transactionManager,
+          callbackSuccess,
+          callbackError
+        )),
       ]
     }
 
@@ -84,8 +91,12 @@ export class Multicaller {
       this.convertToCalls(calls),
       overrideOptions
     )
-    await transactionManager.enqueueTransaction(tx)
-    // if (callback) callback(tx.data, calls)
+    const txData = { ...tx, originData: calls }
+    await transactionManager.enqueueTransaction(
+      txData,
+      callbackSuccess,
+      callbackError
+    )
 
     return []
   }

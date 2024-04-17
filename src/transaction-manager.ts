@@ -2,11 +2,15 @@ import { PopulatedTransaction, Signer, Wallet, providers } from 'ethers'
 import { TransactionRequest, TransactionResponse, TransactionReceipt } from "@ethersproject/abstract-provider";
 import { BigNumber } from 'ethers'
 import FixedSizeQueue from './queue-mem'
+import { CallWithMeta } from './multicaller';
+import { WithdrawMsgWithMeta } from './portal';
 
 const MAX_RESEND_LIMIT = 10;
 
 // Define the type of tx confirmed subscriber
 type TxConfirmedSubscriber = (tx: TransactionReceipt) => void
+
+export type TransactionManagerMeta = PopulatedTransaction & { originData:  CallWithMeta[] | WithdrawMsgWithMeta[]}
 
 export class TransactionManager {
   /**
@@ -20,7 +24,7 @@ export class TransactionManager {
   /**
    * The fixed size of waiting transaction - the transaction that has not been sent yet
    */
-  private waitingTransaction: FixedSizeQueue<PopulatedTransaction>
+  private waitingTransaction: FixedSizeQueue<TransactionManagerMeta>
   /**
    * The fixed size of the pending transaction - the transaction that has been sent but not yet confirmed
    */
@@ -36,10 +40,13 @@ export class TransactionManager {
   private maxPendingTxs: number
   private pollingTimeout: NodeJS.Timeout
   private confirmationNumber: number
+  private callbackSuccess: (calls: CallWithMeta[] | WithdrawMsgWithMeta[]) => void
+  private callbackError: (calls: CallWithMeta[] | WithdrawMsgWithMeta[]) => void
+
   constructor(wallet: Signer, maxPendingTxs: number | undefined, confirmationNumber?: number | undefined ) {
     if (maxPendingTxs && maxPendingTxs <= 1) throw new Error("maxPendingTxs must be greater than 1")
     this.wallet = wallet
-    this.waitingTransaction = new FixedSizeQueue<PopulatedTransaction>(maxPendingTxs*10)
+    this.waitingTransaction = new FixedSizeQueue<TransactionManagerMeta>(maxPendingTxs*10)
     this.pendingTransaction = new Set<string>()
     this.running = false
     this.maxPendingTxs = maxPendingTxs || 1
@@ -106,13 +113,19 @@ export class TransactionManager {
    * @throws {Error}
    * Thrown if the waiting list is full
    */
-  async enqueueTransaction(tx: PopulatedTransaction) {
+  async enqueueTransaction(
+    tx: TransactionManagerMeta, 
+    callbackSuccess: (calls: CallWithMeta[] | WithdrawMsgWithMeta[]) => void | null, 
+    callbackError: (calls: CallWithMeta[] | WithdrawMsgWithMeta[]) => void | null
+  ) {
     // wait until queue is not full by periodically check the queue
     while (this.waitingTransaction.isFull()) {
       await new Promise((resolve) => setTimeout(resolve, 1000))
     }
     // enqueue the tx to the waiting list
     this.waitingTransaction.enqueue(tx)
+    this.callbackSuccess = callbackSuccess
+    this.callbackError = callbackError
     // start the transaction manager if not running
     if (!this.running) this.start()
   }
@@ -124,12 +137,20 @@ export class TransactionManager {
     while (this.pendingTransaction.size < this.maxPendingTxs) {
       if (this.waitingTransaction.isEmpty()) break
       const txData = this.waitingTransaction.dequeue()
-      const tx = await this.publishTx({
-        ...txData,
-        nonce: this.nonce,
-      })
-      this.nonce++
-      this.pendingTransaction.add(tx.hash)
+      const originData = txData.originData
+      delete txData.originData;
+
+      try {
+        const tx = await this.publishTx({
+          ...txData,
+          nonce: this.nonce,
+        })
+        this.callbackSuccess(originData)
+        this.nonce++
+        this.pendingTransaction.add(tx.hash)
+      } catch (error) {
+        this.callbackError(originData)
+      }
     }
   }
 
