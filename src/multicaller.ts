@@ -37,10 +37,11 @@ export class Multicaller {
     return this.targetGas < this.computeExpectedMulticallGas(size)
   }
 
+  // Return failed calls
   public async multicall(
     calls: CallWithMeta[],
     callback: (hash: string, calls: CallWithMeta[]) => void | null
-  ): Promise<CallWithMeta[]> {
+  ): Promise<CallWithMeta[] /*failed list*/> {
     const requireSuccess = true
     let estimatedGas: BigNumber
     try {

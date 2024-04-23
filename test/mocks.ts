@@ -96,6 +96,9 @@ export class MockCrossChainForProver {
   async toCrossChainMessage(txHash: any): Promise<any> {
     return null
   }
+  async getMessagesByTransaction(txHash: any): Promise<any> {
+    return ['message']
+  }
   async getMessageStatus(message: any): Promise<any> {
     this.counter++
 

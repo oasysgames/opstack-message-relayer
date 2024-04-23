@@ -57,10 +57,11 @@ export class Portal {
     return this.targetGas < this.computeExpectedGas(size)
   }
 
+  // Return failed withdraws
   public async finalizeWithdrawals(
     withdraws: WithdrawMsgWithMeta[],
     callback: (hash: string, withdraws: WithdrawMsgWithMeta[]) => void
-  ): Promise<WithdrawMsgWithMeta[]> {
+  ): Promise<WithdrawMsgWithMeta[] /*failed list*/> {
     const calls = this.convertToCall(withdraws)
     let estimatedGas: BigNumber
     try {
