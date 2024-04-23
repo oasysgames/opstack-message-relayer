@@ -139,7 +139,19 @@ export default class Prover {
       }
 
       // pick the first message from the list, as follow the code inside of messenger.toCrossChainMessage
-      const message: CrossChainMessage = messages[0]
+      let message = messages[0]
+
+      // To handle legacy Optimism native token withdrawals, they must be convert to Bedrock messages.
+      // This is because after the OPStack upgrade, the withdrawal amount is obtained from the`SentMessageExtension1`
+      // event emitted by the cross domain messenger, but the legacy Optimism must obtain the withdrawal amount from TX data.
+      // Optimism:
+      //   https://github.com/oasysgames/oasys-optimism/blob/60d6d4b/packages/contracts/contracts/L2/messaging/L2StandardBridge.sol#L107-L113
+      //   https://github.com/oasysgames/oasys-opstack/blob/dd0e469/packages/sdk/src/cross-chain-messenger.ts#L351-L355
+      // OPStack:
+      //   https://github.com/oasysgames/oasys-opstack/blob/dd0e469/packages/contracts-bedrock/src/universal/CrossDomainMessenger.sol#L195
+      //   https://github.com/oasysgames/oasys-opstack/blob/dd0e469/packages/sdk/src/cross-chain-messenger.ts#L303-L305
+      message = await this.messenger.toBedrockCrossChainMessage(message)
+
       const status = await this.messenger.getMessageStatus(message)
       this.logger.debug(
         `[prover] txHash: ${txHash}, status: ${MessageStatus[status]})`
