@@ -277,7 +277,6 @@ export default class Prover {
       // post the proven messages to the finalizer
       this.postMessage(succeeds)
     }
-
   }
 
   protected handleMulticallError(faileds: CallWithMeta[]) {

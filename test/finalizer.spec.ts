@@ -52,7 +52,7 @@ describe('Finalizer', function () {
       signers[0],
       maxPendingTxs,
       () => {},
-      confirmationNumber,
+      confirmationNumber
     )
     finalizer.start()
 

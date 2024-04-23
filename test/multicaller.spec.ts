@@ -26,7 +26,11 @@ describe('Multicaller', function () {
     multicaller.singleCallGas = singleCallGas
     const maxPendingTxs = 2
     const confirmationNumber = 0
-    const transactionManager = new TransactionManager(signers[0], maxPendingTxs, confirmationNumber)
+    const transactionManager = new TransactionManager(
+      signers[0],
+      maxPendingTxs,
+      confirmationNumber
+    )
     return {
       signers,
       counter,

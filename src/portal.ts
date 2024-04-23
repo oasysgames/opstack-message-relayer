@@ -60,7 +60,7 @@ export class Portal {
 
   public async finalizeWithdrawals(
     withdraws: WithdrawMsgWithMeta[],
-    transactionManager: TransactionManager,
+    txmgr: TransactionManager,
     callbackSuccess: (withdraws: WithdrawMsgWithMeta[]) => void,
     callbackError: (calls: WithdrawMsgWithMeta[]) => void | null
   ): Promise<WithdrawMsgWithMeta[]> {
@@ -87,7 +87,7 @@ export class Portal {
       const [firstHalf, secondHalf] = splitArray(withdraws)
       const results = await this.finalizeWithdrawals(
         firstHalf,
-        transactionManager,
+        txmgr,
         callbackSuccess,
         callbackError
       )
@@ -95,7 +95,7 @@ export class Portal {
         ...results,
         ...(await this.finalizeWithdrawals(
           secondHalf,
-          transactionManager,
+          txmgr,
           callbackSuccess,
           callbackError
         )),
@@ -111,7 +111,7 @@ export class Portal {
         overrideOptions
       )
     const txData = { ...tx, originData: withdraws }
-    await transactionManager.enqueueTransaction(
+    await txmgr.enqueueTransaction(
       txData,
       callbackSuccess,
       callbackError

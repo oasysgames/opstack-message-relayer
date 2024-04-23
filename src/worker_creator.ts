@@ -54,7 +54,7 @@ export default class FinalizeWorkCreator {
       multicallTargetGas: multicaller.targetGas,
       gasMultiplier: multicaller.gasMultiplier,
       signer,
-      maxPendingTxs
+      maxPendingTxs,
     }
 
     this.worker = new Worker('./src/worker.js', { workerData })

@@ -25,7 +25,7 @@ export default class Finalizer {
   private logger: Logger
   private messenger: CrossChainMessenger
   private finalizedNotifyer: (msg: FinalizerMessage) => void
-  private transactionManager: TransactionManager
+  private txmgr: TransactionManager
 
   constructor(
     queuePath: string,
@@ -37,7 +37,7 @@ export default class Finalizer {
     signer: Signer,
     maxPendingTxs: number,
     notifyer: (msg: FinalizerMessage) => void,
-    confirmationNumber?: number,
+    confirmationNumber?: number
   ) {
     logger.info(`[finalizer] queuePath: ${queuePath}`)
     if (queuePath !== '') {
@@ -51,8 +51,11 @@ export default class Finalizer {
     this.outputOracle = outputOracle
     this.portal = portal
     this.finalizedNotifyer = notifyer
-    this.transactionManager = new TransactionManager(signer, maxPendingTxs, confirmationNumber)
-    this.transactionManager.init()
+    this.txmgr = new TransactionManager(
+      signer,
+      maxPendingTxs,
+      confirmationNumber
+    )
   }
 
   public async start(): Promise<void> {
@@ -126,7 +129,7 @@ export default class Finalizer {
         // multicall, and handle the result
         await this.portal?.finalizeWithdrawals(
           withdraws,
-          this.transactionManager,
+          this.txmgr,
           (txs) => this.handleMulticallResult(txs),
           (txs) => this.handleMulticallError(txs)
         )
@@ -139,7 +142,7 @@ export default class Finalizer {
       if (0 < withdraws.length) {
         await this.portal?.finalizeWithdrawals(
           withdraws,
-          this.transactionManager,
+          this.txmgr,
           (txs) => this.handleMulticallResult(txs),
           (txs) => this.handleMulticallError(txs)
         )
@@ -156,9 +159,7 @@ export default class Finalizer {
     itr()
   }
 
-  protected handleMulticallResult(
-    succeeds: WithdrawMsgWithMeta[],
-  ): void {
+  protected handleMulticallResult(succeeds: WithdrawMsgWithMeta[]): void {
     if (0 < succeeds.length) {
       this.logger.info(
         `[finalizer] succeeded(${succeeds.length}) txHash: ${succeeds.map(

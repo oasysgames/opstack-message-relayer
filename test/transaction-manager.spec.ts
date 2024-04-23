@@ -64,7 +64,11 @@ describe('TransactionManager', function () {
     )
     await prover.init()
 
-    const transactionManager = new TransactionManager(signers[0], maxPendingTxs, confirmationNumber)
+    const transactionManager = new TransactionManager(
+      signers[0],
+      maxPendingTxs,
+      confirmationNumber
+    )
     await transactionManager.init()
 
     return {

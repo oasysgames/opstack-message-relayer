@@ -44,8 +44,8 @@ export interface WorkerInitData {
   portalAddress: string
   multicallTargetGas: number
   gasMultiplier: number
-  signer: Signer,
-  maxPendingTxs: number,
+  signer: Signer
+  maxPendingTxs: number
 }
 
 const {

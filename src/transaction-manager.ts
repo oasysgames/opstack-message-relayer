@@ -1,16 +1,22 @@
 import { PopulatedTransaction, Signer, Wallet, providers } from 'ethers'
-import { TransactionRequest, TransactionResponse, TransactionReceipt } from "@ethersproject/abstract-provider";
+import {
+  TransactionRequest,
+  TransactionResponse,
+  TransactionReceipt,
+} from '@ethersproject/abstract-provider'
 import { BigNumber } from 'ethers'
 import FixedSizeQueue from './queue-mem'
-import { CallWithMeta } from './multicaller';
-import { WithdrawMsgWithMeta } from './portal';
+import { CallWithMeta } from './multicaller'
+import { WithdrawMsgWithMeta } from './portal'
 
-const MAX_RESEND_LIMIT = 10;
+const MAX_RESEND_LIMIT = 10
 
 // Define the type of tx confirmed subscriber
 type TxConfirmedSubscriber = (tx: TransactionReceipt) => void
 
-export type TransactionManagerMeta = PopulatedTransaction & { originData:  CallWithMeta[] | WithdrawMsgWithMeta[]}
+export type TransactionManagerMeta = PopulatedTransaction & {
+  originData: CallWithMeta[] | WithdrawMsgWithMeta[]
+}
 
 export class TransactionManager {
   /**
@@ -20,7 +26,7 @@ export class TransactionManager {
   /**
    * The nonce of the wallet, will be managed internally
    */
-  private nonce: number | undefined
+  private nonce: number = 0
   /**
    * The fixed size of waiting transaction - the transaction that has not been sent yet
    */
@@ -40,25 +46,27 @@ export class TransactionManager {
   private maxPendingTxs: number
   private pollingTimeout: NodeJS.Timeout
   private confirmationNumber: number
-  private callbackSuccess: (calls: CallWithMeta[] | WithdrawMsgWithMeta[]) => void
+  private callbackSuccess: (
+    calls: CallWithMeta[] | WithdrawMsgWithMeta[]
+  ) => void
   private callbackError: (calls: CallWithMeta[] | WithdrawMsgWithMeta[]) => void
 
-  constructor(wallet: Signer, maxPendingTxs: number | undefined, confirmationNumber?: number | undefined ) {
-    if (maxPendingTxs && maxPendingTxs <= 1) throw new Error("maxPendingTxs must be greater than 1")
+  constructor(
+    wallet: Signer,
+    maxPendingTxs: number | undefined,
+    confirmationNumber?: number | undefined
+  ) {
+    if (maxPendingTxs && maxPendingTxs <= 1)
+      throw new Error('maxPendingTxs must be greater than 1')
     this.wallet = wallet
-    this.waitingTransaction = new FixedSizeQueue<TransactionManagerMeta>(maxPendingTxs*10)
+    this.waitingTransaction = new FixedSizeQueue<TransactionManagerMeta>(
+      maxPendingTxs * 10
+    )
     this.pendingTransaction = new Set<string>()
     this.running = false
     this.maxPendingTxs = maxPendingTxs || 1
     this.stopping = false
     this.confirmationNumber = confirmationNumber ?? 1
-  }
-
-  /**
-   * Init state of the transaction manager, should be called after constructor
-   */
-  async init() {
-    this.nonce = await this.requestLatestNonce()
   }
 
   /**
@@ -69,8 +77,10 @@ export class TransactionManager {
     return await this.wallet.getAddress()
   }
 
-  async resetNonce(n: number | undefined) {
-    this.nonce = n || await this.requestLatestNonce();
+  async resetNonce(n: number = 0) {
+    if (n < 0) throw new Error('Nonce must be greater than 0')
+    if (n === 0) this.nonce = await this.requestLatestNonce()
+    this.nonce = n
   }
 
   /**
@@ -80,14 +90,14 @@ export class TransactionManager {
   async requestLatestNonce() {
     return await this.wallet.provider.getTransactionCount(
       this.wallet.getAddress(),
-      "latest"
+      'latest'
     )
   }
 
   async requestPendingNonce() {
     return await this.wallet.provider.getTransactionCount(
       this.wallet.getAddress(),
-      "pending"
+      'pending'
     )
   }
 
@@ -114,9 +124,13 @@ export class TransactionManager {
    * Thrown if the waiting list is full
    */
   async enqueueTransaction(
-    tx: TransactionManagerMeta, 
-    callbackSuccess: (calls: CallWithMeta[] | WithdrawMsgWithMeta[]) => void | null, 
-    callbackError: (calls: CallWithMeta[] | WithdrawMsgWithMeta[]) => void | null
+    tx: TransactionManagerMeta,
+    callbackSuccess: (
+      calls: CallWithMeta[] | WithdrawMsgWithMeta[]
+    ) => void | null,
+    callbackError: (
+      calls: CallWithMeta[] | WithdrawMsgWithMeta[]
+    ) => void | null
   ) {
     // wait until queue is not full by periodically check the queue
     while (this.waitingTransaction.isFull()) {
@@ -138,9 +152,11 @@ export class TransactionManager {
       if (this.waitingTransaction.isEmpty()) break
       const txData = this.waitingTransaction.dequeue()
       const originData = txData.originData
-      delete txData.originData;
+      delete txData.originData
 
       try {
+        // if nonce is 0, request the latest nonce
+        if (this.nonce === 0) this.nonce = await this.requestLatestNonce()
         const tx = await this.publishTx({
           ...txData,
           nonce: this.nonce,
@@ -154,12 +170,17 @@ export class TransactionManager {
     }
   }
 
-  private async publishTx(tx: TransactionRequest, bumpFeesImmediately: boolean = false): Promise<TransactionResponse> {
+  private async publishTx(
+    tx: TransactionRequest,
+    bumpFeesImmediately: boolean = false
+  ): Promise<TransactionResponse> {
     let res = undefined
-    let counter = 0;
-    while(true) {
+    let counter = 0
+    while (true) {
       if (counter >= MAX_RESEND_LIMIT) {
-        throw new Error(`failed to publish tx: max resend limit(${MAX_RESEND_LIMIT}) reached`)
+        throw new Error(
+          `failed to publish tx: max resend limit(${MAX_RESEND_LIMIT}) reached`
+        )
       }
 
       try {
@@ -169,7 +190,10 @@ export class TransactionManager {
         res = await this.wallet.sendTransaction(tx)
         break
       } catch (e) {
-        if (e.message.includes("transaction replacement is underpriced") || e.message.includes("transaction is underprice")) {
+        if (
+          e.message.includes('transaction replacement is underpriced') ||
+          e.message.includes('transaction is underprice')
+        ) {
           // this case happen when the tx is already sent before
           // increase the gas price at next loop
         } else {
@@ -180,18 +204,18 @@ export class TransactionManager {
       bumpFeesImmediately = true // bump fees next loop
       counter++
     }
-    return res;
+    return res
   }
 
   increaseGasPrice(tx: TransactionRequest): TransactionRequest {
     if (tx.gasPrice) {
-      tx.gasPrice = (tx.gasPrice as BigNumber).mul(1.1);
+      tx.gasPrice = (tx.gasPrice as BigNumber).mul(1.1)
     }
     if (tx.maxPriorityFeePerGas) {
-      tx.maxPriorityFeePerGas = (tx.maxPriorityFeePerGas as BigNumber).mul(1.1);
+      tx.maxPriorityFeePerGas = (tx.maxPriorityFeePerGas as BigNumber).mul(1.1)
     }
     if (tx.maxFeePerGas) {
-      tx.maxFeePerGas = (tx.maxFeePerGas as BigNumber).mul(1.1);
+      tx.maxFeePerGas = (tx.maxFeePerGas as BigNumber).mul(1.1)
     }
     return tx
   }
@@ -206,7 +230,10 @@ export class TransactionManager {
       txs.map((tx) => this.wallet.provider.getTransactionReceipt(tx))
     )
     receipts
-      .filter((receipt) => receipt.blockNumber + this.confirmationNumber <= currentBlock)
+      .filter(
+        (receipt) =>
+          receipt.blockNumber + this.confirmationNumber <= currentBlock
+      )
       .forEach((tx) => {
         // notify the subscriber
         this.notifySubscribers(tx)
@@ -218,7 +245,7 @@ export class TransactionManager {
   async stop() {
     this.stopping = true
     // wait until loop is stopped
-    while(this.running) {
+    while (this.running) {
       await new Promise((resolve) => setTimeout(resolve, 1000))
     }
   }
@@ -231,10 +258,14 @@ export class TransactionManager {
     // - pending txs is empty and waiting txs is empty
     // - or stopping is true
     const exit = (): boolean => {
-      return (this.pendingTransaction.size === 0 && this.waitingTransaction.isEmpty()) || this.stopping
+      return (
+        (this.pendingTransaction.size === 0 &&
+          this.waitingTransaction.isEmpty()) ||
+        this.stopping
+      )
     }
 
-    while(!exit()) {
+    while (!exit()) {
       // evic pending txs
       await this.removePendingTxs()
       // send txs on the waiting list
