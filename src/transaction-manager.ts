@@ -103,6 +103,14 @@ export class TransactionManager {
     }
   }
 
+  addSubscriber(subscriber: Subscriber) {
+    this.subscribers.push(subscriber)
+  }
+
+  notifySubscribers(txs: ManagingTx[]) {
+    this.subscribers.forEach((subscriber) => subscriber(txs))
+  }
+
   /**
    * Enqueue the transaction to waiting list
    * @param tx Populated tx, maybe derived from method populate from contract instance
@@ -251,13 +259,5 @@ export class TransactionManager {
     }
 
     this.running = false
-  }
-
-  addSubscriber(subscriber: Subscriber) {
-    this.subscribers.push(subscriber)
-  }
-
-  notifySubscribers(txs: ManagingTx[]) {
-    this.subscribers.forEach((subscriber) => subscriber(txs))
   }
 }

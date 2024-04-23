@@ -30,8 +30,6 @@ describe('Finalizer', function () {
     //   ).toString()
     // )
     // init portal
-    const maxPendingTxs = 2
-    const confirmationNumber = 0
     const portal = new Portal(
       portalContract.address,
       signers[0],
@@ -49,10 +47,8 @@ describe('Finalizer', function () {
       messenger,
       oracleContract,
       portal,
-      signers[0],
-      maxPendingTxs,
-      () => {},
-      confirmationNumber
+      undefined,
+      () => {}
     )
     finalizer.start()
 
@@ -125,8 +121,6 @@ describe('Finalizer', function () {
       finalizer.appendMessage(...messages)
 
       await sleep(3000)
-      await ethers.provider.send('hardhat_mine', ['0x2'])
-      finalizer.start()
 
       expect(finalizer.queue.count).to.equal(0)
       expect(finalizer.highestFinalizedL2).to.equal(3)

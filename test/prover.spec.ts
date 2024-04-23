@@ -40,8 +40,6 @@ describe('Prover', function () {
     const messenger = new MockCrossChainForProver()
     messenger.init(counter)
     const logger = new MockLogger()
-    const maxPendingTxs = 2
-    const confirmationNumber = 0
 
     const postMessage = (succeeds: CallWithMeta[]) => {
       succeededCalldatas.push(...succeeds)
@@ -57,10 +55,8 @@ describe('Prover', function () {
       reorgSafetyDepth,
       messenger,
       multicaller,
-      signers[0],
-      maxPendingTxs,
-      postMessage,
-      confirmationNumber
+      undefined,
+      postMessage
     )
     await prover.init()
 
@@ -159,7 +155,7 @@ describe('Prover', function () {
       ]
       // @ts-ignore
       const returns = await prover.handleSingleBlock(height, calldatas)
-      await sleep(3000)
+
       expect(returns.length).to.equal(1)
       expect(returns[0].txHash).to.equal('0x5') // this is the last tx in the block, fail because it's over the target gas
       expect(prover.highestProvenL2()).to.equal(height)
