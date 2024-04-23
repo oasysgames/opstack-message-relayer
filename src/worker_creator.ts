@@ -7,7 +7,6 @@ import {
   WorkerInitData,
 } from './finalize_worker'
 import { Multicaller } from './multicaller'
-import { Signer } from 'ethers'
 
 export default class FinalizeWorkCreator {
   private worker: Worker

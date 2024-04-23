@@ -294,15 +294,6 @@ export default class Prover {
     }
   }
 
-  protected handleMulticallError(faileds: CallWithMeta[]) {
-    // // record log the failed list with each error message
-    for (const fail of faileds) {
-      this.logger.warn(
-        `[prover] failed to prove: ${fail.txHash}, err: ${fail.err.message}`
-      )
-    }
-  }
-
   public startScanHeight(): number {
     if (this.initalIteration) {
       this.initalIteration = false

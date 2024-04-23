@@ -93,7 +93,7 @@ export class Multicaller {
         this.convertToCalls(calls),
         overrideOptions
       )
-      await tx.wait()
+      await tx.wait() // wait internally doesn't confirm block.
       if (callback) callback(tx.hash, calls)
     }
 

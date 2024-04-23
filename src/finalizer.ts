@@ -5,7 +5,7 @@ import {
   LowLevelMessage,
   hashLowLevelMessage,
 } from '@eth-optimism/sdk'
-import { Contract, Signer } from 'ethers'
+import { Contract } from 'ethers'
 import DynamicSizeQueue from './queue-storage'
 import FixedSizeQueue from './queue-mem'
 import { Portal, WithdrawMsgWithMeta } from './portal'

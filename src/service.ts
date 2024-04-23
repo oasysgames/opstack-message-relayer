@@ -91,6 +91,7 @@ export class MessageRelayerService extends BaseServiceV2<
       this.options.multicallTargetGas,
       this.options.gasMultiplier
     )
+
     const l1RpcEndpoint = (
       this.options.l1RpcProvider as providers.JsonRpcProvider
     ).connection.url
