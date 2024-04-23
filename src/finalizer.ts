@@ -128,10 +128,8 @@ export default class Finalizer {
 
       // flush the rest of withdraws
       if (0 < withdraws.length) {
-        this.handleMulticallResult(
-          withdraws,
-          await this.portal?.finalizeWithdrawals(withdraws, null)
-        )
+        const faileds = await this.portal?.finalizeWithdrawals(withdraws, null)
+        this.handleMulticallResult(withdraws, faileds)
       }
 
       // recursive call
@@ -211,8 +209,12 @@ export default class Finalizer {
   }
 
   protected updateHighestFinalized(withdraws: WithdrawMsgWithMeta[]): boolean {
-    // assume the last element is the hightst, so doen't traverse all the element
-    let highest = withdraws[withdraws.length - 1].blockHeight
+    let highest = withdraws.reduce((maxCall, currentCall) => {
+      if (!maxCall || currentCall.blockHeight > maxCall.blockHeight) {
+        return currentCall
+      }
+      return maxCall
+    }).blockHeight
     if (0 < highest) highest -= 1 // subtract `1` to assure the all transaction in block is finalized
     if (highest <= this.highestFinalizedL2) return false
 

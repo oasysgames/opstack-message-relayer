@@ -197,10 +197,8 @@ export default class Prover {
       // - update the checked L2 height with succeeded calls
       // - post the proven messages to the finalizer
       // - log the failed list with each error message
-      this.handleMulticallResult(
-        calldatas,
-        await this.multicaller?.multicall(calldatas, null)
-      )
+      const faileds = await this.multicaller?.multicall(calldatas, null)
+      this.handleMulticallResult(calldatas, faileds)
 
       // reset calldata list
       calldatas = []
