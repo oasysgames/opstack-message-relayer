@@ -3,12 +3,12 @@ import {
   CrossChainMessenger,
   MessageStatus,
   CrossChainMessage,
+  MessageDirection,
 } from '@eth-optimism/sdk'
 import { Multicaller, CallWithMeta } from './multicaller'
 import { readFromFile, writeToFile } from './utils'
 import { MessageRelayerMetrics, MessageRelayerState } from './service_types'
-import { TransactionManager } from './transaction-manager'
-import { Signer } from 'ethers'
+import { TransactionManager, ManagingTx } from './transaction-manager'
 
 export default class Prover {
   public state: MessageRelayerState
@@ -23,7 +23,7 @@ export default class Prover {
   private multicaller: Multicaller
   private postMessage: (succeeds: CallWithMeta[]) => void
   private initalIteration: boolean = true
-  private transactionManager: TransactionManager
+  private txmgr: TransactionManager
 
   constructor(
     metrics: MessageRelayerMetrics & StandardMetrics,
@@ -34,10 +34,8 @@ export default class Prover {
     reorgSafetyDepth: number,
     messenger: CrossChainMessenger,
     multicaller: Multicaller,
-    signer: Signer,
-    maxPendingTxs: number,
-    postMessage: (succeeds: CallWithMeta[]) => void,
-    confirmationNumber?: number
+    txmgr: TransactionManager | undefined,
+    postMessage: (succeeds: CallWithMeta[]) => void
   ) {
     this.stateFilePath = stateFilePath
     this.metrics = metrics
@@ -45,15 +43,10 @@ export default class Prover {
     this.fromL2TransactionIndex = fromL2TransactionIndex
     this.l2blockConfirmations = l2blockConfirmations
     this.reorgSafetyDepth = reorgSafetyDepth
-
     this.messenger = messenger
     this.multicaller = multicaller
     this.postMessage = postMessage
-    this.transactionManager = new TransactionManager(
-      signer,
-      maxPendingTxs,
-      confirmationNumber
-    )
+    this.txmgr = txmgr
   }
 
   async init() {
@@ -67,7 +60,20 @@ export default class Prover {
       this.state.highestProvenL2 = this.fromL2TransactionIndex
       this.state.highestFinalizedL2 = this.fromL2TransactionIndex
     }
-    this.transactionManager.init()
+    if (this.txmgr) {
+      // setup the subscriber to handle the result of the multicall
+      const subscriber = (txs: ManagingTx[]) => {
+        // extract calls
+        const calleds = txs.map((tx) => tx.meta)
+        // extract failed txs
+        const faileds = txs
+          .filter((tx) => tx.err !== undefined)
+          .map((tx) => tx.meta)
+        // handle the results
+        this.handleMulticallResult(calleds, faileds)
+      }
+      this.txmgr.addSubscriber(subscriber)
+    }
     this.logger.info(`[prover] init: ${JSON.stringify(this.state)}`)
   }
 
@@ -128,20 +134,29 @@ export default class Prover {
     for (let j = 0; j < block.transactions.length; j++) {
       const txHash = block.transactions[j].hash
 
-      let message: CrossChainMessage
-      try {
-        message = await this.messenger.toCrossChainMessage(txHash)
-      } catch (err) {
-        // skip if the tx is not a cross-chain message
-        const noWithdrawMsg = 'withdrawal index 0 out of bounds'
-        if (err.message.includes(noWithdrawMsg)) {
-          this.logger.debug(`[prover] skip txHash: ${txHash}`)
-          continue
-        }
-        // otherwise, throw the error
-        throw err
+      // Don't use toCrossChainMessage, as it call L1 endpont leading to slow down
+      // try {
+      //   message = await this.messenger.toCrossChainMessage(txHash)
+      // } catch (err) {
+      //   // skip if the tx is not a cross-chain message
+      //   const noWithdrawMsg = 'withdrawal index 0 out of bounds'
+      //   if (err.message.includes(noWithdrawMsg)) {
+      //     this.logger.debug(`[prover] skip txHash: ${txHash}`)
+      //     continue
+      //   }
+      //   // otherwise, throw the error
+      //   throw err
+      // }
+      const messages = await this.messenger.getMessagesByTransaction(txHash, {
+        direction: MessageDirection.L2_TO_L1,
+      })
+      if (messages.length === 0) {
+        this.logger.debug(`[prover] skip txHash: ${txHash}`)
+        continue
       }
 
+      // pick the first message from the list, as follow the code inside of messenger.toCrossChainMessage
+      const message: CrossChainMessage = messages[0]
       const status = await this.messenger.getMessageStatus(message)
       this.logger.debug(
         `[prover] txHash: ${txHash}, status: ${MessageStatus[status]})`
@@ -195,18 +210,10 @@ export default class Prover {
         continue
       }
 
-      // multicall, then handle the result
-      // - update the checked L2 height with succeeded calls
-      // - post the proven messages to the finalizer
-      // - log the failed list with each error message
-      await this.multicaller?.multicall(
-        calldatas,
-        this.transactionManager,
-        (calls) => this.handleMulticallResult(calls),
-        (calls) => {
-          this.handleMulticallError(calls)
-        }
-      )
+      // multicall
+      const faileds = await this.multicaller?.multicall(calldatas, this.txmgr)
+      // handle the result if not using txmgr
+      if (!this.txmgr) this.handleMulticallResult(calldatas, faileds)
 
       // reset calldata list
       calldatas = []
@@ -245,16 +252,8 @@ export default class Prover {
 
     // flush the left calldata
     if (0 < calldatas.length) {
-      await this.multicaller?.multicall(
-        calldatas,
-        this.transactionManager,
-        (calls) => {
-          this.handleMulticallResult(calls)
-        },
-        (calls) => {
-          this.handleMulticallError(calls)
-        }
-      )
+      const faileds = await this.multicaller?.multicall(calldatas, this.txmgr)
+      if (!this.txmgr) this.handleMulticallResult(calldatas, faileds)
     }
 
     // update the proven L2 height
@@ -263,7 +262,16 @@ export default class Prover {
     }
   }
 
-  protected handleMulticallResult(succeeds: CallWithMeta[]): void {
+  // - update the checked L2 height with succeeded calls
+  // - post the proven messages to the finalizer
+  // - log the failed list with each error message
+  protected handleMulticallResult(
+    calleds: CallWithMeta[],
+    faileds: CallWithMeta[]
+  ): void {
+    const failedIds = new Set(faileds.map((failed) => failed.txHash))
+    const succeeds = calleds.filter((call) => !failedIds.has(call.txHash))
+
     if (0 < succeeds.length) {
       this.logger.info(
         `[prover] succeeded(${succeeds.length}) txHash: ${succeeds.map(
@@ -276,6 +284,13 @@ export default class Prover {
       }
       // post the proven messages to the finalizer
       this.postMessage(succeeds)
+    }
+
+    // record log the failed list with each error message
+    for (const fail of faileds) {
+      this.logger.warn(
+        `[prover] failed to prove: ${fail.txHash}, err: ${fail.err.message}`
+      )
     }
   }
 

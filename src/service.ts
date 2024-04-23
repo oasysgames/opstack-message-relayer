@@ -23,6 +23,7 @@ import { FinalizerMessage, L2toL1Message } from './finalize_worker'
 import { MessageRelayerMetrics, MessageRelayerState } from './service_types'
 import Prover from './prover'
 import { ZERO_ADDRESS, sleep } from './utils'
+import { TransactionManager } from './transaction-manager'
 
 export class MessageRelayerService extends BaseServiceV2<
   MessageRelayerOptions,
@@ -90,7 +91,6 @@ export class MessageRelayerService extends BaseServiceV2<
       this.options.multicallTargetGas,
       this.options.gasMultiplier
     )
-    const maxPendingTxs = 2
     const l1RpcEndpoint = (
       this.options.l1RpcProvider as providers.JsonRpcProvider
     ).connection.url
@@ -113,8 +113,7 @@ export class MessageRelayerService extends BaseServiceV2<
       this.options.l1BlockTimeSeconds,
       this.options.finalizerPrivateKey,
       this.multicaller,
-      this.wallet,
-      maxPendingTxs,
+      this.options.maxPendingTxs,
       (message: FinalizerMessage) => {
         this.prover?.updateHighestFinalizedL2(message.highestFinalizedL2)
         this.metrics.numFinalizedMessages.inc(message.finalizedTxs)
@@ -134,6 +133,18 @@ export class MessageRelayerService extends BaseServiceV2<
         }
       })
     }
+    let txmgr: TransactionManager
+    if (1 < this.options.maxPendingTxs) {
+      // temporary fixed as 0
+      // If you're not using txmgr, the confirmationNumber will be zero.
+      // tx.wait() will not confirm any blocks.
+      const confirmationNumber = 0
+      txmgr = new TransactionManager(
+        this.wallet,
+        this.options.maxPendingTxs,
+        confirmationNumber
+      )
+    }
     this.prover = new Prover(
       this.metrics,
       this.logger,
@@ -143,8 +154,7 @@ export class MessageRelayerService extends BaseServiceV2<
       this.options.reorgSafetyDepth,
       this.messenger,
       this.multicaller,
-      this.wallet,
-      maxPendingTxs,
+      txmgr,
       (succeeds: CallWithMeta[]) =>
         this.finalizeWorkerCreator?.postMessage(toMessages(succeeds))
     )
@@ -163,6 +173,7 @@ export class MessageRelayerService extends BaseServiceV2<
 
   protected async main(): Promise<void> {
     await this.prover?.handleMultipleBlock()
+    await this.prover.writeState()
   }
 
   // override to write the last state

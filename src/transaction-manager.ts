@@ -1,4 +1,4 @@
-import { PopulatedTransaction, Signer, Wallet, providers } from 'ethers'
+import { PopulatedTransaction, Signer } from 'ethers'
 import {
   TransactionRequest,
   TransactionResponse,
@@ -6,17 +6,18 @@ import {
 } from '@ethersproject/abstract-provider'
 import { BigNumber } from 'ethers'
 import FixedSizeQueue from './queue-mem'
-import { CallWithMeta } from './multicaller'
-import { WithdrawMsgWithMeta } from './portal'
 
 const MAX_RESEND_LIMIT = 10
 
-// Define the type of tx confirmed subscriber
-type TxConfirmedSubscriber = (tx: TransactionReceipt) => void
-
-export type TransactionManagerMeta = PopulatedTransaction & {
-  originData: CallWithMeta[] | WithdrawMsgWithMeta[]
+export type ManagingTx = {
+  populated: PopulatedTransaction
+  res?: TransactionResponse
+  receipt?: TransactionReceipt
+  meta?: any
+  err?: Error
 }
+
+type Subscriber = (txs: ManagingTx[]) => void
 
 export class TransactionManager {
   /**
@@ -30,43 +31,30 @@ export class TransactionManager {
   /**
    * The fixed size of waiting transaction - the transaction that has not been sent yet
    */
-  private waitingTransaction: FixedSizeQueue<TransactionManagerMeta>
-  /**
-   * The fixed size of the pending transaction - the transaction that has been sent but not yet confirmed
-   */
-  private pendingTransaction: Set<string>
+  private waitingTxs: FixedSizeQueue<ManagingTx>
 
-  private subscribers: TxConfirmedSubscriber[] = []
-
-  /**
-   * The running state of the transaction manager
-   */
+  private unconfirmedList: ManagingTx[] = []
+  private subscribers: Subscriber[] = []
   private running: boolean
   private stopping: boolean
   private maxPendingTxs: number
-  private pollingTimeout: NodeJS.Timeout
   private confirmationNumber: number
-  private callbackSuccess: (
-    calls: CallWithMeta[] | WithdrawMsgWithMeta[]
-  ) => void
-  private callbackError: (calls: CallWithMeta[] | WithdrawMsgWithMeta[]) => void
 
   constructor(
     wallet: Signer,
-    maxPendingTxs: number | undefined,
-    confirmationNumber?: number | undefined
+    maxPendingTxs: number = 1,
+    confirmationNumber: number = 1
   ) {
-    if (maxPendingTxs && maxPendingTxs <= 1)
-      throw new Error('maxPendingTxs must be greater than 1')
+    if (maxPendingTxs < 1)
+      throw new Error('maxPendingTxs must be greater than 0')
+    if (confirmationNumber < 0)
+      throw new Error('confirmationNumber must be equal of greater than 0')
     this.wallet = wallet
-    this.waitingTransaction = new FixedSizeQueue<TransactionManagerMeta>(
-      maxPendingTxs * 10
-    )
-    this.pendingTransaction = new Set<string>()
     this.running = false
-    this.maxPendingTxs = maxPendingTxs || 1
+    this.maxPendingTxs = maxPendingTxs
     this.stopping = false
-    this.confirmationNumber = confirmationNumber ?? 1
+    this.confirmationNumber = confirmationNumber
+    this.waitingTxs = new FixedSizeQueue<ManagingTx>(this.maxPendingTxs)
   }
 
   /**
@@ -111,8 +99,7 @@ export class TransactionManager {
    */
   getCurrentStats() {
     return {
-      waitingSize: this.waitingTransaction.count,
-      pendingSize: this.pendingTransaction.size,
+      waitingSize: this.waitingTxs.count,
     }
   }
 
@@ -123,23 +110,13 @@ export class TransactionManager {
    * @throws {Error}
    * Thrown if the waiting list is full
    */
-  async enqueueTransaction(
-    tx: TransactionManagerMeta,
-    callbackSuccess: (
-      calls: CallWithMeta[] | WithdrawMsgWithMeta[]
-    ) => void | null,
-    callbackError: (
-      calls: CallWithMeta[] | WithdrawMsgWithMeta[]
-    ) => void | null
-  ) {
-    // wait until queue is not full by periodically check the queue
-    while (this.waitingTransaction.isFull()) {
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+  async enqueueTransaction(tx: ManagingTx) {
+    // wait until confirmed list size is less than max pending txs
+    while (this.unconfirmedList.length >= this.maxPendingTxs) {
+      await new Promise((resolve) => setTimeout(resolve, 500))
     }
     // enqueue the tx to the waiting list
-    this.waitingTransaction.enqueue(tx)
-    this.callbackSuccess = callbackSuccess
-    this.callbackError = callbackError
+    this.waitingTxs.enqueue(tx)
     // start the transaction manager if not running
     if (!this.running) this.start()
   }
@@ -148,24 +125,20 @@ export class TransactionManager {
    * Send the transaction in the waiting list, append it into pendingList
    */
   private async sendTransactions() {
-    while (this.pendingTransaction.size < this.maxPendingTxs) {
-      if (this.waitingTransaction.isEmpty()) break
-      const txData = this.waitingTransaction.dequeue()
-      const originData = txData.originData
-      delete txData.originData
-
+    while (!this.waitingTxs.isEmpty()) {
+      const item = this.waitingTxs.dequeue()
       try {
         // if nonce is 0, request the latest nonce
         if (this.nonce === 0) this.nonce = await this.requestLatestNonce()
-        const tx = await this.publishTx({
-          ...txData,
+        item.res = await this.publishTx({
+          ...item.populated,
           nonce: this.nonce,
         })
-        this.callbackSuccess(originData)
+        this.unconfirmedList.push(item)
         this.nonce++
-        this.pendingTransaction.add(tx.hash)
-      } catch (error) {
-        this.callbackError(originData)
+      } catch (e) {
+        item.err = e
+        this.notifySubscribers([item])
       }
     }
   }
@@ -220,26 +193,35 @@ export class TransactionManager {
     return tx
   }
 
-  /**
-   * Remove the pending transaction that has been confirmed
-   */
-  async removePendingTxs() {
-    const txs = Array.from(this.pendingTransaction)
+  async confirmTxs() {
     const currentBlock = await this.wallet.provider.getBlockNumber()
-    const receipts = await Promise.all(
-      txs.map((tx) => this.wallet.provider.getTransactionReceipt(tx))
-    )
-    receipts
-      .filter(
-        (receipt) =>
-          receipt.blockNumber + this.confirmationNumber <= currentBlock
+    const confirmedList: ManagingTx[] = []
+    for (let i = 0; i < this.unconfirmedList.length; i++) {
+      // get receipt if not exists
+      if (!this.unconfirmedList[i].receipt) {
+        const receipt = await this.wallet.provider.getTransactionReceipt(
+          this.unconfirmedList[i].res.hash
+        )
+        // skip if receipt is null
+        if (receipt) continue
+        this.unconfirmedList[i].receipt = receipt
+      }
+      // make sure current confirmation depth has been reached
+      if (
+        this.confirmationNumber <=
+        currentBlock - this.unconfirmedList[i].receipt.blockNumber
+      ) {
+        confirmedList.push(this.unconfirmedList[i])
+      }
+    }
+    if (0 < confirmedList.length) {
+      // notify the subscribers
+      this.notifySubscribers(confirmedList)
+      // remove the confirmed txs from the unconfirmed list
+      this.unconfirmedList = this.unconfirmedList.filter(
+        (item) => !confirmedList.includes(item)
       )
-      .forEach((tx) => {
-        // notify the subscriber
-        this.notifySubscribers(tx)
-        // remove the tx from pending list
-        this.pendingTransaction.delete(tx.transactionHash)
-      })
+    }
   }
 
   async stop() {
@@ -258,28 +240,24 @@ export class TransactionManager {
     // - pending txs is empty and waiting txs is empty
     // - or stopping is true
     const exit = (): boolean => {
-      return (
-        (this.pendingTransaction.size === 0 &&
-          this.waitingTransaction.isEmpty()) ||
-        this.stopping
-      )
+      return this.waitingTxs.isEmpty() || this.stopping
     }
 
     while (!exit()) {
-      // evic pending txs
-      await this.removePendingTxs()
       // send txs on the waiting list
       await this.sendTransactions()
+      // confirm the txs
+      await this.confirmTxs()
     }
 
     this.running = false
   }
 
-  addSubscriber(subscriber: TxConfirmedSubscriber) {
+  addSubscriber(subscriber: Subscriber) {
     this.subscribers.push(subscriber)
   }
 
-  notifySubscribers(tx: TransactionReceipt) {
-    this.subscribers.forEach((subscriber) => subscriber(tx))
+  notifySubscribers(txs: ManagingTx[]) {
+    this.subscribers.forEach((subscriber) => subscriber(txs))
   }
 }

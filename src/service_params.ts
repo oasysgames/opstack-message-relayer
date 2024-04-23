@@ -14,7 +14,7 @@ export type MessageRelayerOptions = {
   OutputOracle?: string
   multicallAddress?: string
   multicallTargetGas?: number
-  receiptTimeout?: number
+  maxPendingTxs?: number
   gasMultiplier?: number
   depositConfirmationBlocks?: number
   l1BlockTimeSeconds?: number
@@ -64,6 +64,11 @@ export const serviceOptionsSpec: any = {
     validator: validators.num,
     desc: 'gas target for multicall contract when the relay',
     default: 3000000,
+  },
+  maxPendingTxs: {
+    validator: validators.num,
+    desc: 'The maximum number of pending transactions to keep in the queue.',
+    default: 1,
   },
   gasMultiplier: {
     validator: validators.num,

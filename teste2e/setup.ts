@@ -2,7 +2,7 @@ require('dotenv').config()
 import { Overrides as TxOverrides } from 'ethers'
 import { TransactionResponse } from '@ethersproject/abstract-provider'
 import { MessageStatus } from '@eth-optimism/sdk'
-import { Ether, log, createWallets, abbreviateTxHash } from './lib'
+import { Gwei, Ether, log, createWallets, abbreviateTxHash } from './lib'
 import * as opsdk from './lib/sdk'
 import { ERC721BridgeAdapter } from './lib/erc721-bridge-adapter'
 import { TEST_ACCOUNTS } from './accounts'
@@ -35,7 +35,7 @@ async function main() {
   // create test accounts
   const accounts = createWallets(TEST_ACCOUNTS.length, TEST_ACCOUNTS)
 
-  const amount = BigInt(AMOUNT) * Ether
+  const amount = BigInt(AMOUNT) * Gwei
 
   // deposit to L1
   log('Deposit OAS/ERC20/ERC721...\n')
@@ -55,56 +55,56 @@ async function main() {
     )
 
     // deposit ERC20
-    await messenger20.approveERC20(
-      L1_ERC20_ADDRESS,
-      L2_ERC20_ADDRESS,
-      amount.toString(),
-      {
-        overrides: { from: l1Signer.address } as TxOverrides,
-      }
-    )
-    const tx2 = await messenger20.depositERC20(
-      L1_ERC20_ADDRESS,
-      L2_ERC20_ADDRESS,
-      amount.toString(),
-      {
-        recipient: wallet.address,
-        overrides: { from: l1Signer.address } as TxOverrides,
-      }
-    )
-    txs.push(tx2)
-    log(
-      `${AMOUNT} ERC20 deposited to ${
-        wallet.address
-      } on L1. tx: ${abbreviateTxHash(tx2.hash)}\n`
-    )
+    // await messenger20.approveERC20(
+    //   L1_ERC20_ADDRESS,
+    //   L2_ERC20_ADDRESS,
+    //   amount.toString(),
+    //   {
+    //     overrides: { from: l1Signer.address } as TxOverrides,
+    //   }
+    // )
+    // const tx2 = await messenger20.depositERC20(
+    //   L1_ERC20_ADDRESS,
+    //   L2_ERC20_ADDRESS,
+    //   amount.toString(),
+    //   {
+    //     recipient: wallet.address,
+    //     overrides: { from: l1Signer.address } as TxOverrides,
+    //   }
+    // )
+    // txs.push(tx2)
+    // log(
+    //   `${AMOUNT} ERC20 deposited to ${
+    //     wallet.address
+    //   } on L1. tx: ${abbreviateTxHash(tx2.hash)}\n`
+    // )
 
-    // deposit ERC721
-    if (tokenId < TOKEN_ID_END) {
-      await messenger721.approveERC20(
-        L1_ERC721_ADDRESS,
-        L2_ERC721_ADDRESS,
-        tokenId,
-        {
-          overrides: { from: l1Signer.address } as TxOverrides,
-        }
-      )
-      const tx3 = await messenger721.depositERC20(
-        L1_ERC721_ADDRESS,
-        L2_ERC721_ADDRESS,
-        tokenId,
-        {
-          recipient: wallet.address,
-          overrides: { from: l1Signer.address } as TxOverrides,
-        }
-      )
-      txs.push(tx3)
-      log(
-        `ERC721 tokenId ${tokenId} deposited to ${
-          wallet.address
-        } on L1. tx: ${abbreviateTxHash(tx3.hash)}\n`
-      )
-    }
+    // // deposit ERC721
+    // if (tokenId < TOKEN_ID_END) {
+    //   await messenger721.approveERC20(
+    //     L1_ERC721_ADDRESS,
+    //     L2_ERC721_ADDRESS,
+    //     tokenId,
+    //     {
+    //       overrides: { from: l1Signer.address } as TxOverrides,
+    //     }
+    //   )
+    //   const tx3 = await messenger721.depositERC20(
+    //     L1_ERC721_ADDRESS,
+    //     L2_ERC721_ADDRESS,
+    //     tokenId,
+    //     {
+    //       recipient: wallet.address,
+    //       overrides: { from: l1Signer.address } as TxOverrides,
+    //     }
+    //   )
+    //   txs.push(tx3)
+    //   log(
+    //     `ERC721 tokenId ${tokenId} deposited to ${
+    //       wallet.address
+    //     } on L1. tx: ${abbreviateTxHash(tx3.hash)}\n`
+    //   )
+    // }
 
     tokenId++
   }

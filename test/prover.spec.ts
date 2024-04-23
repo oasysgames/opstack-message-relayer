@@ -145,7 +145,7 @@ describe('Prover', function () {
         {
           target: counter.address,
           callData: (await counter.populateTransaction.incSimple()).data,
-          blockHeight: height + 1,
+          blockHeight: height + 1, // event higher than the block height, but processed with higher priority than the txs in the block=height
           txHash: '0x1',
           message: '0x0',
         },
@@ -161,7 +161,7 @@ describe('Prover', function () {
       const returns = await prover.handleSingleBlock(height, calldatas)
       await sleep(3000)
       expect(returns.length).to.equal(1)
-      expect(returns[0].txHash).to.equal('0x5')
+      expect(returns[0].txHash).to.equal('0x5') // this is the last tx in the block, fail because it's over the target gas
       expect(prover.highestProvenL2()).to.equal(height)
       expect(await counter.get()).to.equal(3)
       expect(succeededCalldatas.map((c) => c.txHash)).to.members([

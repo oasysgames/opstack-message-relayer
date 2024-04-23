@@ -38,15 +38,16 @@ export class Multicaller {
     return this.targetGas < this.computeExpectedMulticallGas(size)
   }
 
+  // Return failed calls
   public async multicall(
     calls: CallWithMeta[],
-    transactionManager: TransactionManager,
-    callbackSuccess: (calls: CallWithMeta[]) => void | null,
-    callbackError: (calls: CallWithMeta[]) => void | null
-  ): Promise<CallWithMeta[]> {
+    txmgr: TransactionManager | undefined,
+    callback: (hash: string, calls: CallWithMeta[]) => void | null = null
+  ): Promise<CallWithMeta[] /*failed list*/> {
     const requireSuccess = true
     let estimatedGas: BigNumber
     try {
+      // simulate the call to check if it succeeds by estimating the gas required.
       estimatedGas = await this.contract.estimateGas.tryAggregate(
         requireSuccess,
         this.convertToCalls(calls)
@@ -66,37 +67,35 @@ export class Multicaller {
 
       // split the array in half and recursively call
       const [firstHalf, secondHalf] = splitArray(calls)
-      const results = await this.multicall(
-        firstHalf,
-        transactionManager,
-        callbackSuccess,
-        callbackError
-      )
+      const results = await this.multicall(firstHalf, txmgr, callback)
       return [
         ...results,
-        ...(await this.multicall(
-          secondHalf,
-          transactionManager,
-          callbackSuccess,
-          callbackError
-        )),
+        ...(await this.multicall(secondHalf, txmgr, callback)),
       ]
     }
 
     const overrideOptions = {
       gasLimit: ~~(estimatedGas.toNumber() * (this.gasMultiplier || 1.0)),
     }
-    const tx = await this.contract.populateTransaction.tryAggregate(
-      requireSuccess,
-      this.convertToCalls(calls),
-      overrideOptions
-    )
-    const txData = { ...tx, originData: calls }
-    await transactionManager.enqueueTransaction(
-      txData,
-      callbackSuccess,
-      callbackError
-    )
+
+    if (txmgr) {
+      // enqueue the tx to the waiting list
+      const populated = await this.contract.populateTransaction.tryAggregate(
+        requireSuccess,
+        this.convertToCalls(calls),
+        overrideOptions
+      )
+      await txmgr.enqueueTransaction({ populated, meta: calls })
+    } else {
+      // send the tx directly
+      const tx = await this.contract.tryAggregate(
+        requireSuccess,
+        this.convertToCalls(calls),
+        overrideOptions
+      )
+      await tx.wait()
+      if (callback) callback(tx.hash, calls)
+    }
 
     return []
   }

@@ -11,7 +11,7 @@ import FixedSizeQueue from './queue-mem'
 import { Portal, WithdrawMsgWithMeta } from './portal'
 import { L2toL1Message } from './finalize_worker'
 import { FinalizerMessage } from './finalize_worker'
-import { TransactionManager } from './transaction-manager'
+import { TransactionManager, ManagingTx } from './transaction-manager'
 
 export default class Finalizer {
   public highestFinalizedL2: number = 0
@@ -34,10 +34,8 @@ export default class Finalizer {
     messenger: CrossChainMessenger,
     outputOracle: Contract,
     portal: Portal,
-    signer: Signer,
-    maxPendingTxs: number,
-    notifyer: (msg: FinalizerMessage) => void,
-    confirmationNumber?: number
+    txmgr: TransactionManager,
+    notifyer: (msg: FinalizerMessage) => void
   ) {
     logger.info(`[finalizer] queuePath: ${queuePath}`)
     if (queuePath !== '') {
@@ -51,14 +49,24 @@ export default class Finalizer {
     this.outputOracle = outputOracle
     this.portal = portal
     this.finalizedNotifyer = notifyer
-    this.txmgr = new TransactionManager(
-      signer,
-      maxPendingTxs,
-      confirmationNumber
-    )
+    this.txmgr = txmgr
   }
 
   public async start(): Promise<void> {
+    if (this.txmgr) {
+      // setup the subscriber to handle the result of the multicall
+      const subscriber = (txs: ManagingTx[]) => {
+        // extract calls
+        const calleds = txs.map((tx) => tx.meta)
+        // extract failed txs
+        const faileds = txs
+          .filter((tx) => tx.err !== undefined)
+          .map((tx) => tx.meta)
+        // handle the results
+        this.handleMulticallResult(calleds, faileds)
+      }
+      this.txmgr.addSubscriber(subscriber)
+    }
     this.logger.info(
       `[finalizer] starting..., loopIntervalMs: ${this.loopIntervalMs}ms`
     )
@@ -126,13 +134,13 @@ export default class Finalizer {
           continue
         }
 
-        // multicall, and handle the result
-        await this.portal?.finalizeWithdrawals(
+        // multicall
+        const faileds = await this.portal?.finalizeWithdrawals(
           withdraws,
-          this.txmgr,
-          (txs) => this.handleMulticallResult(txs),
-          (txs) => this.handleMulticallError(txs)
+          this.txmgr
         )
+        // handle the result if not using txmgr
+        if (!this.txmgr) this.handleMulticallResult(withdraws, faileds)
 
         // reset calldata list
         withdraws = []
@@ -140,12 +148,11 @@ export default class Finalizer {
 
       // flush the rest of withdraws
       if (0 < withdraws.length) {
-        await this.portal?.finalizeWithdrawals(
+        const faileds = await this.portal?.finalizeWithdrawals(
           withdraws,
-          this.txmgr,
-          (txs) => this.handleMulticallResult(txs),
-          (txs) => this.handleMulticallError(txs)
+          this.txmgr
         )
+        if (!this.txmgr) this.handleMulticallResult(withdraws, faileds)
       }
 
       // recursive call
@@ -159,7 +166,13 @@ export default class Finalizer {
     itr()
   }
 
-  protected handleMulticallResult(succeeds: WithdrawMsgWithMeta[]): void {
+  protected handleMulticallResult(
+    calleds: WithdrawMsgWithMeta[],
+    faileds: WithdrawMsgWithMeta[]
+  ): void {
+    const failedIds = new Set(faileds.map((failed) => failed.txHash))
+    const succeeds = calleds.filter((call) => !failedIds.has(call.txHash))
+
     if (0 < succeeds.length) {
       this.logger.info(
         `[finalizer] succeeded(${succeeds.length}) txHash: ${succeeds.map(
@@ -176,9 +189,7 @@ export default class Finalizer {
         })
       }
     }
-  }
 
-  protected handleMulticallError(faileds: WithdrawMsgWithMeta[]) {
     // log the failed list with each error message
     for (const fail of faileds) {
       this.logger.warn(
@@ -221,8 +232,12 @@ export default class Finalizer {
   }
 
   protected updateHighestFinalized(withdraws: WithdrawMsgWithMeta[]): boolean {
-    // assume the last element is the hightst, so doen't traverse all the element
-    let highest = withdraws[withdraws.length - 1].blockHeight
+    let highest = withdraws.reduce((maxCall, currentCall) => {
+      if (!maxCall || currentCall.blockHeight > maxCall.blockHeight) {
+        return currentCall
+      }
+      return maxCall
+    }).blockHeight
     if (0 < highest) highest -= 1 // subtract `1` to assure the all transaction in block is finalized
     if (highest <= this.highestFinalizedL2) return false
 

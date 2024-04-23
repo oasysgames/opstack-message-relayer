@@ -2,7 +2,7 @@ require('dotenv').config()
 import { TransactionResponse } from '@ethersproject/abstract-provider'
 import { MessageStatus } from '@eth-optimism/sdk'
 import { ERC721BridgeAdapter } from './lib/erc721-bridge-adapter'
-import { Ether, log, createWallets, abbreviateTxHash } from './lib'
+import { Gwei, Ether, log, createWallets, abbreviateTxHash } from './lib'
 import * as opsdk from './lib/sdk'
 import { TEST_ACCOUNTS } from './accounts'
 
@@ -26,7 +26,7 @@ async function main() {
   const accounts = createWallets(123)
   const wallets = createWallets(TEST_ACCOUNTS.length, TEST_ACCOUNTS)
 
-  const amount = BigInt(AMOUNT) * Ether
+  const amount = BigInt(AMOUNT) * Gwei
 
   // withdraw from L2
   log('withdraw OAS/ERC20/ERC721...\n')
@@ -43,6 +43,10 @@ async function main() {
     messenger = opsdk.getCrossChainMessenger({ l1Signer, l2Signer })
     const tx1 = await messenger.withdrawETH(amount.toString(), {
       recipient: accounts[i].address,
+      overrides: {
+        maxFeePerGas: 0,
+        maxPriorityFeePerGas: 0,
+      },
     })
     txs.push(tx1)
     log(
@@ -52,46 +56,46 @@ async function main() {
     )
 
     // withdraw ERC20
-    messenger = opsdk.getCrossChainMessenger({ l1Signer, l2Signer })
-    const tx2 = await messenger.withdrawERC20(
-      L1_ERC20_ADDRESS,
-      L2_ERC20_ADDRESS,
-      amount.toString(),
-      {
-        recipient: accounts[i].address,
-      }
-    )
-    txs.push(tx2)
-    log(
-      `withdraw ${AMOUNT} ERC20 from ${wallet.address} to ${abbreviateTxHash(
-        accounts[i].address
-      )}. tx: ${abbreviateTxHash(tx2.hash)}\n`
-    )
+    // messenger = opsdk.getCrossChainMessenger({ l1Signer, l2Signer })
+    // const tx2 = await messenger.withdrawERC20(
+    //   L1_ERC20_ADDRESS,
+    //   L2_ERC20_ADDRESS,
+    //   amount.toString(),
+    //   {
+    //     recipient: accounts[i].address,
+    //   }
+    // )
+    // txs.push(tx2)
+    // log(
+    //   `withdraw ${AMOUNT} ERC20 from ${wallet.address} to ${abbreviateTxHash(
+    //     accounts[i].address
+    //   )}. tx: ${abbreviateTxHash(tx2.hash)}\n`
+    // )
 
-    // withdraw ERC721
-    if (tokenId < TOKEN_ID_END) {
-      messenger = opsdk.getCrossChainMessenger({
-        l1Signer,
-        l2Signer,
-        bridgeAdapter,
-      })
-      const tx3 = await messenger.withdrawERC20(
-        L1_ERC721_ADDRESS,
-        L2_ERC721_ADDRESS,
-        tokenId.toString(),
-        {
-          recipient: accounts[i].address,
-        }
-      )
-      txs.push(tx3)
-      log(
-        `withdraw ERC721 tokenId ${tokenId} from ${
-          wallet.address
-        } to ${abbreviateTxHash(accounts[i].address)}. tx: ${abbreviateTxHash(
-          tx3.hash
-        )}\n`
-      )
-    }
+    // // withdraw ERC721
+    // if (tokenId < TOKEN_ID_END) {
+    //   messenger = opsdk.getCrossChainMessenger({
+    //     l1Signer,
+    //     l2Signer,
+    //     bridgeAdapter,
+    //   })
+    //   const tx3 = await messenger.withdrawERC20(
+    //     L1_ERC721_ADDRESS,
+    //     L2_ERC721_ADDRESS,
+    //     tokenId.toString(),
+    //     {
+    //       recipient: accounts[i].address,
+    //     }
+    //   )
+    //   txs.push(tx3)
+    //   log(
+    //     `withdraw ERC721 tokenId ${tokenId} from ${
+    //       wallet.address
+    //     } to ${abbreviateTxHash(accounts[i].address)}. tx: ${abbreviateTxHash(
+    //       tx3.hash
+    //     )}\n`
+    //   )
+    // }
 
     tokenId++
   }

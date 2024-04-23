@@ -58,12 +58,15 @@ export class Portal {
     return this.targetGas < this.computeExpectedGas(size)
   }
 
+  // Return failed withdraws
   public async finalizeWithdrawals(
     withdraws: WithdrawMsgWithMeta[],
-    txmgr: TransactionManager,
-    callbackSuccess: (withdraws: WithdrawMsgWithMeta[]) => void,
-    callbackError: (calls: WithdrawMsgWithMeta[]) => void | null
-  ): Promise<WithdrawMsgWithMeta[]> {
+    txmgr: TransactionManager | undefined,
+    callback: (
+      hash: string,
+      withdraws: WithdrawMsgWithMeta[]
+    ) => void | null = null
+  ): Promise<WithdrawMsgWithMeta[] /*failed list*/> {
     const calls = this.convertToCall(withdraws)
     let estimatedGas: BigNumber
     try {
@@ -85,37 +88,34 @@ export class Portal {
 
       // split the array in half and recursively call
       const [firstHalf, secondHalf] = splitArray(withdraws)
-      const results = await this.finalizeWithdrawals(
-        firstHalf,
-        txmgr,
-        callbackSuccess,
-        callbackError
-      )
+      const results = await this.finalizeWithdrawals(firstHalf, txmgr, callback)
       return [
         ...results,
-        ...(await this.finalizeWithdrawals(
-          secondHalf,
-          txmgr,
-          callbackSuccess,
-          callbackError
-        )),
+        ...(await this.finalizeWithdrawals(secondHalf, txmgr, callback)),
       ]
     }
 
     const overrideOptions = {
       gasLimit: ~~(estimatedGas.toNumber() * (this.gasMultiplier || 1.0)),
     }
-    const tx =
-      await this.contract.populateTransaction.finalizeWithdrawalTransactions(
+
+    if (txmgr) {
+      // enqueue the tx to the waiting list
+      const populated =
+        await this.contract.populateTransaction.finalizeWithdrawalTransactions(
+          calls,
+          overrideOptions
+        )
+      await txmgr.enqueueTransaction({ populated, meta: withdraws })
+    } else {
+      // send the tx directly
+      const tx = await this.contract.finalizeWithdrawalTransactions(
         calls,
         overrideOptions
       )
-    const txData = { ...tx, originData: withdraws }
-    await txmgr.enqueueTransaction(
-      txData,
-      callbackSuccess,
-      callbackError
-    )
+      await tx.wait()
+      if (callback) callback(tx.hash, withdraws)
+    }
 
     return []
   }
