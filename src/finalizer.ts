@@ -195,7 +195,7 @@ export default class Finalizer {
     // log the failed list with each error message
     for (const fail of faileds) {
       this.logger.warn(
-        `[finalizer] failed to prove: ${fail.txHash}, err: ${fail.err.message}`
+        `[finalizer] failed to finalize: ${fail.txHash}, err: ${fail.err.message}`
       )
     }
   }

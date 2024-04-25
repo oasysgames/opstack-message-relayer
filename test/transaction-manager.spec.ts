@@ -115,7 +115,7 @@ describe('TransactionManager', function () {
       await ethers.provider.send('hardhat_mine', ['0x1'])
 
       // wait last tx sent
-      await sleep(55)
+      await sleep(100)
       await ethers.provider.send('hardhat_mine', ['0x1'])
       expect(txmgr.getUnconfirmedTransactions().length).to.equal(1)
 

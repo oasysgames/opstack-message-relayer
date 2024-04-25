@@ -153,7 +153,12 @@ export class TransactionManager {
         item.err = e
         this.notifySubscribers([item])
       }
-      this.waitingTxs.dequeue() // evict the head from queue
+      // evict the head from queue
+      const eviced = this.waitingTxs.dequeue()
+      // assert the evicted item is the same as the current item
+      // if (item.populated.data !== eviced.populated.data) {
+      //   throw new Error(`data mismatch: ${item.populated.data} != ${eviced.populated.data}`)
+      // }
     }
   }
 

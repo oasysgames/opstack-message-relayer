@@ -67,7 +67,7 @@ export const serviceOptionsSpec: any = {
   gasMultiplier: {
     validator: validators.num,
     desc: 'Gas limit multiplier.',
-    default: 1.01,
+    default: 1.1,
   },
   l1BlockTimeSeconds: {
     validator: validators.num,

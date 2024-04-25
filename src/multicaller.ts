@@ -75,7 +75,7 @@ export class Multicaller {
     }
 
     const overrideOptions = {
-      gasLimit: ~~(estimatedGas.toNumber() * (this.gasMultiplier || 1.0)),
+      gasLimit: ~~(estimatedGas.toNumber() * this.gasMultiplier),
     }
 
     if (txmgr) {
