@@ -14,13 +14,12 @@ export type MessageRelayerOptions = {
   OutputOracle?: string
   multicallAddress?: string
   multicallTargetGas?: number
-  maxPendingTxs?: number
   gasMultiplier?: number
   depositConfirmationBlocks?: number
   l1BlockTimeSeconds?: number
   stateFilePath?: string
-  // l2blockConfirmations?: number
   reorgSafetyDepth?: number
+  maxPendingTxs?: number
   queuePath?: string
   finalizerPrivateKey: string
 }
@@ -65,11 +64,6 @@ export const serviceOptionsSpec: any = {
     desc: 'gas target for multicall contract when the relay',
     default: 3000000,
   },
-  maxPendingTxs: {
-    validator: validators.num,
-    desc: 'The maximum number of pending transactions to keep in the queue.',
-    default: 1,
-  },
   gasMultiplier: {
     validator: validators.num,
     desc: 'Gas limit multiplier.',
@@ -99,6 +93,11 @@ export const serviceOptionsSpec: any = {
     validator: validators.num,
     desc: 'Index of the first L2 transaction to start processing from.',
     default: 0,
+  },
+  maxPendingTxs: {
+    validator: validators.num,
+    desc: 'The maximum number of pending transactions to keep in the queue.',
+    default: 1,
   },
   queuePath: {
     validator: validators.str,
