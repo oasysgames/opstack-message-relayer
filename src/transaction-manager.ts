@@ -122,13 +122,6 @@ export class TransactionManager {
     return this.running
   }
 
-  /**
-   * Enqueue the transaction to waiting list
-   * @param tx Populated tx, maybe derived from method populate from contract instance
-   * @returns Void when success
-   * @throws {Error}
-   * Thrown if the waiting list is full
-   */
   async enqueueTransaction(tx: ManagingTx): Promise<boolean> {
     // wait until confirmed list size is less than max pending txs
     while (this.pendingIsFull()) {
@@ -239,6 +232,12 @@ export class TransactionManager {
         // skip if receipt is null
         if (!receipt) continue
         this.unconfirmedList[i].receipt = receipt
+        // fill error if receipt status is fail(status = 0)
+        if (receipt.status === 0) {
+          this.unconfirmedList[i].err = new Error(
+            `transaction failed, tx: ${receipt.transactionHash}`
+          )
+        }
       }
       // make sure current confirmation depth has been reached
       if (

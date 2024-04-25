@@ -1,6 +1,6 @@
 import { expect } from 'chai'
 import { ethers } from 'hardhat'
-import { TransactionManager } from '../src/transaction-manager'
+import { TransactionManager, ManagingTx } from '../src/transaction-manager'
 import { sleep } from '../src/utils'
 
 const maxPendingTxs = 2
@@ -141,6 +141,39 @@ describe('TransactionManager', function () {
       await txmgr.stop()
       expect(txmgr.isRunning()).to.equal(false)
       expect(await counter.get()).to.equal(0)
+    })
+  })
+
+  describe('notifySubscribers', function () {
+    it('success', async function () {
+      const { txmgr, counter } = await setup()
+      const populated = await counter.populateTransaction.incSimple()
+      const revertPopulated = await counter.populateTransaction.revertFunc()
+      const subscriber = (txs: ManagingTx[]) => {
+        expect(txs.length).to.equal(2)
+        for (const tx of txs) {
+          if (tx.populated.data === populated.data) {
+            expect(tx.err).to.equal(undefined)
+          }
+          if (tx.populated.data === revertPopulated.data) {
+            expect(tx.err?.message).to.includes('transaction failed')
+          }
+        }
+      }
+      txmgr.addSubscriber(subscriber)
+
+      await txmgr.enqueueTransaction({ populated })
+      await txmgr.enqueueTransaction({ populated: revertPopulated })
+
+      // wait until tx sent
+      await sleep(55)
+      expect(txmgr.getUnconfirmedTransactions().length).to.equal(2)
+      await ethers.provider.send('hardhat_mine', ['0x1'])
+
+      // wait until tx confirmed
+      await sleep(50)
+      expect(txmgr.getUnconfirmedTransactions().length).to.equal(0)
+      expect(await counter.get()).to.equal(1)
     })
   })
 })
