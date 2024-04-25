@@ -3,6 +3,7 @@ import { BigNumber, Contract, Signer } from 'ethers'
 import { LowLevelMessage } from '@eth-optimism/sdk'
 import IOasysPortal from './contracts/IOasysPortal.json'
 import { splitArray } from './utils'
+import { TransactionManager } from './transaction-manager'
 
 export type WithdrawMsgWithMeta = LowLevelMessage & {
   blockHeight: number
@@ -60,7 +61,11 @@ export class Portal {
   // Return failed withdraws
   public async finalizeWithdrawals(
     withdraws: WithdrawMsgWithMeta[],
-    callback: (hash: string, withdraws: WithdrawMsgWithMeta[]) => void
+    txmgr: TransactionManager | undefined,
+    callback: (
+      hash: string,
+      withdraws: WithdrawMsgWithMeta[]
+    ) => void | null = null
   ): Promise<WithdrawMsgWithMeta[] /*failed list*/> {
     const calls = this.convertToCall(withdraws)
     let estimatedGas: BigNumber
@@ -83,23 +88,34 @@ export class Portal {
 
       // split the array in half and recursively call
       const [firstHalf, secondHalf] = splitArray(withdraws)
-      const results = await this.finalizeWithdrawals(firstHalf, callback)
+      const results = await this.finalizeWithdrawals(firstHalf, txmgr, callback)
       return [
         ...results,
-        ...(await this.finalizeWithdrawals(secondHalf, callback)),
+        ...(await this.finalizeWithdrawals(secondHalf, txmgr, callback)),
       ]
     }
 
     const overrideOptions = {
-      gasLimit: ~~(estimatedGas.toNumber() * (this.gasMultiplier || 1.0)),
+      gasLimit: ~~(estimatedGas.toNumber() * this.gasMultiplier),
     }
-    const tx = await this.contract.finalizeWithdrawalTransactions(
-      calls,
-      overrideOptions
-    )
-    await tx.wait()
 
-    if (callback) callback(tx.hash, withdraws)
+    if (txmgr) {
+      // enqueue the tx to the waiting list
+      const populated =
+        await this.contract.populateTransaction.finalizeWithdrawalTransactions(
+          calls,
+          overrideOptions
+        )
+      await txmgr.enqueueTransaction({ populated, meta: withdraws })
+    } else {
+      // send the tx directly
+      const tx = await this.contract.finalizeWithdrawalTransactions(
+        calls,
+        overrideOptions
+      )
+      await tx.wait() // wait internally doesn't confirm block.
+      if (callback) callback(tx.hash, withdraws)
+    }
 
     return []
   }

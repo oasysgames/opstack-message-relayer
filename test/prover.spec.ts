@@ -3,7 +3,8 @@ import { ethers } from 'hardhat'
 import { Multicaller, CallWithMeta } from '../src/multicaller'
 import Prover from '../src/prover'
 import { MockCrossChainForProver, MockLogger, MockMetrics } from './mocks'
-import { sleep, rand, readFromFile, deleteFileIfExists } from '../src/utils'
+import { TransactionManager } from '../src/transaction-manager'
+import { sleep, rand, deleteFileIfExists } from '../src/utils'
 
 const stateFilePath = './test/state.test.json'
 const l2blockConfirmations = 8
@@ -16,7 +17,7 @@ describe('Prover', function () {
     succeededCalldatas.length = 0
   })
 
-  async function setup() {
+  async function setup(withTxmgr: boolean = false) {
     const signers = await ethers.getSigners()
     // deploy counter contract
     const counter = await (await ethers.getContractFactory('Counter')).deploy(0)
@@ -45,6 +46,11 @@ describe('Prover', function () {
       succeededCalldatas.push(...succeeds)
     }
 
+    let txmgr: TransactionManager | undefined = undefined
+    if (withTxmgr) {
+      txmgr = new TransactionManager(signers[0], 2, 0, 50)
+    }
+
     // @ts-ignore
     const prover = new Prover(
       metrics,
@@ -55,6 +61,7 @@ describe('Prover', function () {
       reorgSafetyDepth,
       messenger,
       multicaller,
+      txmgr,
       postMessage
     )
     await prover.init()
@@ -66,6 +73,7 @@ describe('Prover', function () {
       callData,
       singleCallGas,
       messenger,
+      txmgr,
       prover,
     }
   }
@@ -114,9 +122,25 @@ describe('Prover', function () {
   })
 
   describe('handleSingleBlock', function () {
-    it('succeed', async function () {
+    it('succeed: without txmgr', async function () {
       const { counter, prover, messenger } = await setup()
       const height = 134
+      const calldatas = [
+        {
+          target: counter.address,
+          callData: (await counter.populateTransaction.incSimple()).data,
+          blockHeight: height + 1, // event higher than the block height, but processed with higher priority than the txs in the block=height
+          txHash: '0x1',
+          message: '0x0',
+        },
+        {
+          target: counter.address,
+          callData: (await counter.populateTransaction.incSimple()).data,
+          blockHeight: height - 1,
+          txHash: '0x2',
+          message: '0x0',
+        },
+      ]
       const blocks = {
         [height]: {
           transactions: [
@@ -136,11 +160,30 @@ describe('Prover', function () {
         },
       }
       messenger.setBlocks(blocks)
+      // @ts-ignore
+      const returns = await prover.handleSingleBlock(height, calldatas)
+
+      expect(returns.length).to.equal(1)
+      expect(returns[0].txHash).to.equal('0x5') // this is the last tx in the block, fail because it's over the target gas
+      expect(prover.highestProvenL2()).to.equal(height)
+      expect(await counter.get()).to.equal(3)
+      expect(succeededCalldatas.map((c) => c.txHash)).to.members([
+        '0x3',
+        '0x1',
+        '0x2',
+        '0x4',
+      ])
+    })
+
+    it('succeed: with txmgr', async function () {
+      const withTxmgr = true
+      const { counter, prover, messenger } = await setup(withTxmgr)
+      const height = 134
       const calldatas = [
         {
           target: counter.address,
           callData: (await counter.populateTransaction.incSimple()).data,
-          blockHeight: height + 1, // event higher than the block height, but processed with higher priority than the txs in the block=height
+          blockHeight: height - 1,
           txHash: '0x1',
           message: '0x0',
         },
@@ -152,12 +195,33 @@ describe('Prover', function () {
           message: '0x0',
         },
       ]
+      const blocks = {
+        [height]: {
+          transactions: [
+            {
+              number: height,
+              hash: '0x3',
+            },
+            {
+              number: height,
+              hash: '0x4',
+            },
+            {
+              number: height,
+              hash: '0x5',
+            },
+          ],
+        },
+      }
+      messenger.setBlocks(blocks)
       // @ts-ignore
       const returns = await prover.handleSingleBlock(height, calldatas)
 
+      // wait until tx confirmed
+      await sleep(55)
       expect(returns.length).to.equal(1)
-      expect(returns[0].txHash).to.equal('0x5') // this is the last tx in the block, fail because it's over the target gas
-      expect(prover.highestProvenL2()).to.equal(height)
+      expect(returns[0].txHash).to.equal('0x5')
+      expect(prover.highestProvenL2()).to.equal(height - 1)
       expect(await counter.get()).to.equal(3)
       expect(succeededCalldatas.map((c) => c.txHash)).to.members([
         '0x3',

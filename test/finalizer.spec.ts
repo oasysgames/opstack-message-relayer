@@ -47,6 +47,7 @@ describe('Finalizer', function () {
       messenger,
       oracleContract,
       portal,
+      undefined,
       () => {}
     )
     finalizer.start()

@@ -50,7 +50,7 @@ describe('Multicaller', function () {
       for (let i = 0; i < 3; i++) {
         calls.push({ target, callData } as CallWithMeta)
       }
-      await multicaller.multicall(calls, null)
+      await multicaller.multicall(calls, undefined)
 
       expect(await counter.get()).to.equal(calls.length)
     })
@@ -64,7 +64,7 @@ describe('Multicaller', function () {
       }
 
       multicaller.gasMultiplier = 1
-      await multicaller.multicall(calls, null)
+      await multicaller.multicall(calls, undefined)
 
       expect(await counter.get()).to.equal(calls.length)
     })
@@ -78,7 +78,7 @@ describe('Multicaller', function () {
         calls.push({ target, callData } as CallWithMeta)
       }
       calls.push(revertCall)
-      const faileds = await multicaller.multicall(calls, null)
+      const faileds = await multicaller.multicall(calls, undefined)
 
       expect(faileds.length).to.equal(2)
       expect(await counter.get()).to.equal(4)
@@ -93,7 +93,7 @@ describe('Multicaller', function () {
         calls.push({ target, callData } as CallWithMeta)
       }
       calls.push(revertCall)
-      const faileds = await multicaller.multicall(calls, null)
+      const faileds = await multicaller.multicall(calls, undefined)
 
       expect(faileds.length).to.equal(2)
       expect(await counter.get()).to.equal(4)

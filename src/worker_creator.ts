@@ -29,6 +29,7 @@ export default class FinalizeWorkCreator {
     l1BlockTimeSeconds: number,
     finalizerPrivateKey: string,
     multicaller: Multicaller,
+    maxPendingTxs: number,
     messageHandler: (message: FinalizerMessage) => void,
     exitHandler: (code: number) => void
   ) {
@@ -50,6 +51,7 @@ export default class FinalizeWorkCreator {
       portalAddress,
       multicallTargetGas: multicaller.targetGas,
       gasMultiplier: multicaller.gasMultiplier,
+      maxPendingTxs,
     }
 
     this.worker = new Worker('./src/worker.js', { workerData })
