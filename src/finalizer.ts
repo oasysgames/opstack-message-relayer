@@ -56,13 +56,13 @@ export default class Finalizer {
     if (this.txmgr) {
       // setup the subscriber to handle the result of the multicall
       const subscriber = (txs: ManagingTx[]) => {
-        // extract calls
-        const calleds = txs.map((tx) => tx.meta)
-        // extract failed txs
-        const faileds = txs
+        const calleds = txs.map((tx) => tx.meta) // extract calls
+        const faileds = txs // extract failed txs
           .filter((tx) => tx.err !== undefined)
-          .map((tx) => tx.meta)
-        // handle the results
+          .map((tx) => {
+            tx.meta.err = tx.err
+            return tx.meta
+          })
         this.handleMulticallResult(calleds, faileds)
       }
       this.txmgr.addSubscriber(subscriber)

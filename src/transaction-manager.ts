@@ -39,11 +39,13 @@ export class TransactionManager {
   private stopping: boolean
   private maxPendingTxs: number
   private confirmationNumber: number
+  private intervalMs: number
 
   constructor(
     wallet: Signer,
     maxPendingTxs: number = 1,
-    confirmationNumber: number = 1
+    confirmationNumber: number = 1,
+    intervalMs: number = 500
   ) {
     if (maxPendingTxs < 1)
       throw new Error('maxPendingTxs must be greater than 0')
@@ -54,6 +56,7 @@ export class TransactionManager {
     this.maxPendingTxs = maxPendingTxs
     this.stopping = false
     this.confirmationNumber = confirmationNumber
+    this.intervalMs = intervalMs
     this.waitingTxs = new FixedSizeQueue<ManagingTx>(this.maxPendingTxs)
   }
 
@@ -75,32 +78,22 @@ export class TransactionManager {
    *
    * @returns Get the current nonce of the wallet
    */
-  async requestLatestNonce() {
+  async requestLatestNonce(): Promise<number> {
     return await this.wallet.provider.getTransactionCount(
       this.wallet.getAddress(),
       'latest'
     )
   }
 
-  async requestPendingNonce() {
+  async requestPendingNonce(): Promise<number> {
     return await this.wallet.provider.getTransactionCount(
       this.wallet.getAddress(),
       'pending'
     )
   }
 
-  getNonce() {
+  getNonce(): number {
     return this.nonce
-  }
-
-  /**
-   * Get the current stats of the queue
-   * @returns
-   */
-  getCurrentStats() {
-    return {
-      waitingSize: this.waitingTxs.count,
-    }
   }
 
   addSubscriber(subscriber: Subscriber) {
@@ -111,6 +104,24 @@ export class TransactionManager {
     this.subscribers.forEach((subscriber) => subscriber(txs))
   }
 
+  pendingIsFull(): boolean {
+    return (
+      this.waitingTxs.count + this.unconfirmedList.length >= this.maxPendingTxs
+    )
+  }
+
+  lengthOfWaitngTxs(): number {
+    return this.waitingTxs.count
+  }
+
+  getUnconfirmedTransactions(): ManagingTx[] {
+    return this.unconfirmedList
+  }
+
+  isRunning(): boolean {
+    return this.running
+  }
+
   /**
    * Enqueue the transaction to waiting list
    * @param tx Populated tx, maybe derived from method populate from contract instance
@@ -118,15 +129,16 @@ export class TransactionManager {
    * @throws {Error}
    * Thrown if the waiting list is full
    */
-  async enqueueTransaction(tx: ManagingTx) {
+  async enqueueTransaction(tx: ManagingTx): Promise<boolean> {
     // wait until confirmed list size is less than max pending txs
-    while (this.unconfirmedList.length >= this.maxPendingTxs) {
-      await new Promise((resolve) => setTimeout(resolve, 500))
+    while (this.pendingIsFull()) {
+      await new Promise((resolve) => setTimeout(resolve, this.intervalMs))
     }
     // enqueue the tx to the waiting list
     this.waitingTxs.enqueue(tx)
     // start the transaction manager if not running
     if (!this.running) this.start()
+    return true
   }
 
   /**
@@ -134,7 +146,7 @@ export class TransactionManager {
    */
   private async sendTransactions() {
     while (!this.waitingTxs.isEmpty()) {
-      const item = this.waitingTxs.dequeue()
+      const item = this.waitingTxs.peek()
       try {
         // if nonce is 0, request the latest nonce
         if (this.nonce === 0) this.nonce = await this.requestLatestNonce()
@@ -148,15 +160,20 @@ export class TransactionManager {
         item.err = e
         this.notifySubscribers([item])
       }
+      this.waitingTxs.dequeue() // evict the head from queue
     }
   }
 
-  private async publishTx(
+  public async publishTx(
     tx: TransactionRequest,
     bumpFeesImmediately: boolean = false
   ): Promise<TransactionResponse> {
     let res = undefined
     let counter = 0
+
+    // fill the maxFeePerGas, maxPriorityFeePerGas, and gasPrice
+    tx = await this.wallet.populateTransaction(tx)
+
     while (true) {
       if (counter >= MAX_RESEND_LIMIT) {
         throw new Error(
@@ -173,7 +190,9 @@ export class TransactionManager {
       } catch (e) {
         if (
           e.message.includes('transaction replacement is underpriced') ||
-          e.message.includes('transaction is underprice')
+          e.message.includes('transaction is underprice') ||
+          e.message.includes('fee too low') ||
+          e.message.includes('Known transaction')
         ) {
           // this case happen when the tx is already sent before
           // increase the gas price at next loop
@@ -189,14 +208,21 @@ export class TransactionManager {
   }
 
   increaseGasPrice(tx: TransactionRequest): TransactionRequest {
+    const multiplier = BigNumber.from(11)
+    const divisor = BigNumber.from(10)
+
     if (tx.gasPrice) {
-      tx.gasPrice = (tx.gasPrice as BigNumber).mul(1.1)
+      tx.gasPrice = (tx.gasPrice as BigNumber).mul(multiplier).div(divisor)
     }
     if (tx.maxPriorityFeePerGas) {
-      tx.maxPriorityFeePerGas = (tx.maxPriorityFeePerGas as BigNumber).mul(1.1)
+      tx.maxPriorityFeePerGas = (tx.maxPriorityFeePerGas as BigNumber)
+        .mul(multiplier)
+        .div(divisor)
     }
     if (tx.maxFeePerGas) {
-      tx.maxFeePerGas = (tx.maxFeePerGas as BigNumber).mul(1.1)
+      tx.maxFeePerGas = (tx.maxFeePerGas as BigNumber)
+        .mul(multiplier)
+        .div(divisor)
     }
     return tx
   }
@@ -211,7 +237,7 @@ export class TransactionManager {
           this.unconfirmedList[i].res.hash
         )
         // skip if receipt is null
-        if (receipt) continue
+        if (!receipt) continue
         this.unconfirmedList[i].receipt = receipt
       }
       // make sure current confirmation depth has been reached
@@ -236,7 +262,7 @@ export class TransactionManager {
     this.stopping = true
     // wait until loop is stopped
     while (this.running) {
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      await new Promise((resolve) => setTimeout(resolve, this.intervalMs))
     }
   }
 
@@ -248,14 +274,22 @@ export class TransactionManager {
     // - pending txs is empty and waiting txs is empty
     // - or stopping is true
     const exit = (): boolean => {
-      return this.waitingTxs.isEmpty() || this.stopping
+      return (
+        (this.waitingTxs.isEmpty() && this.unconfirmedList.length === 0) ||
+        this.stopping
+      )
     }
 
     while (!exit()) {
-      // send txs on the waiting list
-      await this.sendTransactions()
-      // confirm the txs
-      await this.confirmTxs()
+      await new Promise((resolve: any) =>
+        setTimeout(async () => {
+          // send txs on the waiting list
+          await this.sendTransactions()
+          // confirm the txs
+          await this.confirmTxs()
+          resolve()
+        }, this.intervalMs)
+      )
     }
 
     this.running = false

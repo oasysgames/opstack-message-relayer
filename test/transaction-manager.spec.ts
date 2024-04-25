@@ -1,134 +1,146 @@
-// import { expect } from 'chai'
-// import { ethers } from 'hardhat'
-// import { Multicaller, CallWithMeta } from '../src/multicaller'
-// import { TransactionManager } from '../src/transaction-manager'
-// import Prover from '../src/prover'
-// import { MockCrossChainForProver, MockLogger, MockMetrics } from './mocks'
-// import { sleep, rand, readFromFile, deleteFileIfExists } from '../src/utils'
-// import { sign } from 'crypto'
+import { expect } from 'chai'
+import { ethers } from 'hardhat'
+import { TransactionManager } from '../src/transaction-manager'
+import { sleep } from '../src/utils'
 
-// const stateFilePath = './test/state.test.json'
-// const l2blockConfirmations = 8
-// const reorgSafetyDepth = 4
-// const succeededCalldatas: CallWithMeta[] = []
+const maxPendingTxs = 2
+const confirmationNumber = 0
+const intervalMs = 50
 
-// describe('TransactionManager', function () {
-//   afterEach(async function () {
-//     await deleteFileIfExists(stateFilePath)
-//     succeededCalldatas.length = 0
-//   })
+describe('TransactionManager', function () {
+  async function setup() {
+    // Disable auto mining
+    await ethers.provider.send('evm_setAutomine', [false])
+    // Doesn't have to set block gas limit manually
+    // await ethers.provider.send('hardhat_setNextBlockBaseFeePerGas', [
+    //   '0x3B9ACA00',
+    // ]) // 1gwai
+    // Need to increase gas limit manually as low value is set in hardhat.config.ts
+    await ethers.provider.send('evm_setBlockGasLimit', ['0x1C9C380']) // 30M
+    const signers = await ethers.getSigners()
+    const deployer = signers[0]
+    const counter = await (await ethers.getContractFactory('Counter')).deploy(0)
+    const txmgr = new TransactionManager(
+      deployer,
+      maxPendingTxs,
+      confirmationNumber,
+      intervalMs
+    )
+    await ethers.provider.send('hardhat_mine', ['0x1'])
+    return {
+      deployer,
+      signers,
+      counter,
+      txmgr,
+    }
+  }
 
-//   async function setup() {
-//     const signers = await ethers.getSigners()
-//     // deploy counter contract
-//     const counter = await (await ethers.getContractFactory('Counter')).deploy(0)
-//     // deploy multicalll2 contract
-//     const muticall = await (
-//       await ethers.getContractFactory('Multicall2')
-//     ).deploy()
-//     // estimate single inc call gas
-//     const callData = (await counter.populateTransaction.incSimple()).data
-//     const singleCallGas = Number(
-//       (await counter.estimateGas.incSimple()).toString()
-//     )
-//     // init multicaller
-//     const multicaller = new Multicaller(
-//       muticall.address,
-//       signers[0],
-//       Math.floor(singleCallGas * 2.5)
-//     )
+  describe('publishTx', function () {
+    it('success: no replace', async function () {
+      const { txmgr, counter } = await setup()
+      const populated = await counter.populateTransaction.incSimple()
+      await txmgr.publishTx(populated)
+      await ethers.provider.send('hardhat_mine', ['0x1'])
 
-//     const metrics = new MockMetrics()
-//     const messenger = new MockCrossChainForProver()
-//     messenger.init(counter)
-//     const logger = new MockLogger()
-//     const maxPendingTxs = 2
-//     const confirmationNumber = 0
-//     const postMessage = (succeeds: CallWithMeta[]) => {
-//       succeededCalldatas.push(...succeeds)
-//     }
+      expect(await counter.get()).to.equal(1)
+    })
 
-//     // @ts-ignore
-//     const prover = new Prover(
-//       metrics,
-//       logger,
-//       stateFilePath,
-//       0,
-//       l2blockConfirmations,
-//       reorgSafetyDepth,
-//       messenger,
-//       multicaller,
-//       signers[0],
-//       maxPendingTxs,
-//       postMessage
-//     )
-//     await prover.init()
+    it('success: has replace', async function () {
+      const { txmgr, counter } = await setup()
+      const populated = await counter.populateTransaction.incSimple()
+      const nonce = await txmgr.requestLatestNonce()
+      populated.nonce = nonce
+      const tx1 = await txmgr.publishTx(populated)
+      const tx2 = await txmgr.publishTx(populated)
+      expect(await ethers.provider.getTransaction(tx1.hash)).to.equal(null)
+      expect((await ethers.provider.getTransaction(tx2.hash)).hash).to.equal(
+        tx2.hash
+      )
+      await ethers.provider.send('hardhat_mine', ['0x1'])
 
-//     const transactionManager = new TransactionManager(
-//       signers[0],
-//       maxPendingTxs,
-//       confirmationNumber
-//     )
-//     await transactionManager.init()
+      expect(await txmgr.requestLatestNonce()).to.equal(nonce + 1)
+      // will fail by `transaction was replaced` error, unable to call again
+      expect(await counter.get()).to.equal(1)
+    })
 
-//     return {
-//       signers,
-//       counter,
-//       multicaller,
-//       callData,
-//       singleCallGas,
-//       messenger,
-//       prover,
-//       transactionManager,
-//     }
-//   }
+    it('fail', async function () {
+      const { txmgr, counter } = await setup()
+      const populated = await counter.populateTransaction.revertFunc()
+      const res = await txmgr.publishTx(populated)
+      await ethers.provider.send('hardhat_mine', ['0x1'])
 
-//   describe('Init success', function () {
-//     it('From address init success', async function () {
-//       const { transactionManager, signers } = await setup()
-//       const fromAddress = await transactionManager.getFromAddress()
-//       expect(fromAddress).to.be.eq(signers[0].address)
-//     })
-//   })
+      const receipt = await ethers.provider.getTransactionReceipt(res.hash)
+      expect(receipt.status).to.equal(0)
+    })
+  })
 
-//   describe('Send transaction', function () {
-//     it('Push raw transaction success', async () => {
-//       const { counter, transactionManager } = await setup()
-//       const data = await counter.populateTransaction.incSimple()
-//       await transactionManager.enqueueTransaction(data)
-//       await transactionManager.enqueueTransaction(data)
-//     })
+  describe('enqueueTransaction', function () {
+    it('success: under pending', async function () {
+      const { txmgr, counter } = await setup()
+      const populated = await counter.populateTransaction.incSimple()
+      await txmgr.enqueueTransaction({ populated })
+      await txmgr.enqueueTransaction({ populated })
 
-//     it('Send transaction success', async () => {
-//       const { counter, transactionManager } = await setup()
-//       const data = await counter.populateTransaction.incSimple()
-//       const startNonce = await transactionManager.getNonce()
-//       await transactionManager.enqueueTransaction(data)
-//       await transactionManager.enqueueTransaction(data)
-//       const endNonce = await transactionManager.getNonce()
-//       expect(endNonce).to.be.eq(startNonce + 2)
-//       // Increase block number to finalize the transaction
-//       await ethers.provider.send('hardhat_mine', ['0x2'])
-//       const { pendingSize } = transactionManager.getCurrentStats()
-//       expect(pendingSize).to.be.eq(0)
-//     })
+      // wait until tx sent
+      await sleep(55)
+      expect(txmgr.getUnconfirmedTransactions().length).to.equal(2)
+      await ethers.provider.send('hardhat_mine', ['0x1'])
 
-//     it('Send transaction multiple time', async () => {
-//       const { counter, transactionManager } = await setup()
-//       const data = await counter.populateTransaction.incSimple()
-//       await transactionManager.enqueueTransaction(data)
-//       await transactionManager.enqueueTransaction(data)
-//       await transactionManager.enqueueTransaction(data)
-//       await transactionManager.enqueueTransaction(data)
-//       // Increase block number to finalize the transaction
-//       await ethers.provider.send('hardhat_mine', ['0x1'])
-//       let { pendingSize, waitingSize } = transactionManager.getCurrentStats()
-//       expect(pendingSize).to.be.eq(2)
-//       expect(waitingSize).to.be.eq(2)
-//       await ethers.provider.send('hardhat_mine', ['0x1'])
-//       ;({ pendingSize, waitingSize } = transactionManager.getCurrentStats())
-//       expect(pendingSize).to.be.eq(0)
-//       expect(waitingSize).to.be.eq(0)
-//     })
-//   })
-// })
+      // wait until tx confirmed
+      await sleep(50)
+      expect(txmgr.getUnconfirmedTransactions().length).to.equal(0)
+      expect(await counter.get()).to.equal(2)
+    })
+
+    it('success: over pending', async function () {
+      const { txmgr, counter } = await setup()
+      const populated = await counter.populateTransaction.incSimple()
+      await txmgr.enqueueTransaction({ populated })
+      await txmgr.enqueueTransaction({ populated })
+      txmgr.enqueueTransaction({ populated }).then((result) => {
+        expect(result).to.equal(true)
+      })
+
+      expect(txmgr.pendingIsFull()).to.equal(true)
+
+      // wait until tx sent
+      await sleep(55)
+      expect(txmgr.getUnconfirmedTransactions().length).to.equal(2)
+      await ethers.provider.send('hardhat_mine', ['0x1'])
+
+      // wait until tx confirmed
+      await sleep(50)
+      expect(txmgr.getUnconfirmedTransactions().length).to.equal(0)
+      expect(await counter.get()).to.equal(2)
+      await ethers.provider.send('hardhat_mine', ['0x1'])
+
+      // wait last tx sent
+      await sleep(50)
+      await ethers.provider.send('hardhat_mine', ['0x1'])
+      expect(txmgr.getUnconfirmedTransactions().length).to.equal(1)
+
+      // wait last tx confirmed
+      await sleep(50)
+      expect(await counter.get()).to.equal(3)
+    })
+  })
+
+  describe('stop', function () {
+    it('success', async function () {
+      const { txmgr, counter } = await setup()
+      const populated = await counter.populateTransaction.incSimple()
+      await txmgr.enqueueTransaction({ populated })
+      await txmgr.enqueueTransaction({ populated })
+
+      // wait until tx sent
+      await sleep(55)
+      expect(txmgr.getUnconfirmedTransactions().length).to.equal(2)
+
+      // stop
+      expect(txmgr.isRunning()).to.equal(true)
+      await txmgr.stop()
+      expect(txmgr.isRunning()).to.equal(false)
+      expect(await counter.get()).to.equal(0)
+    })
+  })
+})
