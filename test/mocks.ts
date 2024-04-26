@@ -60,10 +60,6 @@ export class MockCrossChain {
       minGasLimit: BigNumber.from(123456),
     }
   }
-
-  async toBedrockCrossChainMessage(message: any): Promise<any> {
-    return message
-  }
 }
 
 export class MockCrossChainForProver {
@@ -98,9 +94,6 @@ export class MockCrossChainForProver {
     this.blocks = blocks
   }
   async toCrossChainMessage(txHash: any): Promise<any> {
-    return null
-  }
-  async toBedrockCrossChainMessage(message: any): Promise<any> {
     return null
   }
   async getMessagesByTransaction(txHash: any): Promise<any> {

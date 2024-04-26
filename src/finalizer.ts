@@ -60,11 +60,7 @@ export default class Finalizer {
       while (this.queue.count !== 0) {
         const head = this.queue.peek()
         const txHash = head.txHash
-        // To handle legacy Optimism native token withdrawals, they must be convert to Bedrock messages.
-        // (Prover does the same thing.)
-        const message = await this.messenger.toBedrockCrossChainMessage(
-          head.message
-        )
+        const message = head.message
         const status = await this.messenger.getMessageStatus(message)
         let lowLevelMessage: LowLevelMessage
 
