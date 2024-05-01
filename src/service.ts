@@ -62,7 +62,7 @@ export class MessageRelayerService extends BaseServiceV2<
       l1: {
         AddressManager: this.options.addressManager,
         L1CrossDomainMessenger: this.options.l1CrossDomainMessenger,
-        L1StandardBridge: ZERO_ADDRESS, // dummy address
+        L1StandardBridge: this.options.l1StandardBridge,
         StateCommitmentChain: ZERO_ADDRESS, // dummy address
         CanonicalTransactionChain: ZERO_ADDRESS, // dummy address
         BondManager: ZERO_ADDRESS, // dummy address
@@ -98,32 +98,29 @@ export class MessageRelayerService extends BaseServiceV2<
     const l2RpcEndpoint = (
       this.options.l2RpcProvider as providers.JsonRpcProvider
     ).connection.url
-    this.finalizeWorkerCreator = new FinalizeWorkCreator(
-      this.logger,
-      this.options.queuePath,
-      this.options.loopIntervalMs,
-      this.options.logLevel,
-      this.options.addressManager,
-      this.options.l1CrossDomainMessenger,
-      this.options.OutputOracle,
-      this.options.portalAddress,
+    this.finalizeWorkerCreator = new FinalizeWorkCreator({
+      contracts,
       l1RpcEndpoint,
       l2RpcEndpoint,
       l1ChainId,
       l2ChainId,
-      this.options.l1BlockTimeSeconds,
-      this.options.finalizerPrivateKey,
-      this.multicaller,
-      this.options.maxPendingTxs,
-      (message: FinalizerMessage) => {
+      logger: this.logger,
+      queuePath: this.options.queuePath,
+      loopIntervalMs: this.options.loopIntervalMs,
+      logLevel: this.options.logLevel,
+      l1BlockTimeSeconds: this.options.l1BlockTimeSeconds,
+      finalizerPrivateKey: this.options.finalizerPrivateKey,
+      multicaller: this.multicaller,
+      maxPendingTxs: this.options.maxPendingTxs,
+      messageHandler: (message: FinalizerMessage) => {
         this.prover?.updateHighestFinalizedL2(message.highestFinalizedL2)
         this.metrics.numFinalizedMessages.inc(message.finalizedTxs)
       },
-      (code: number) => {
+      exitHandler: (code: number) => {
         this.logger.error(`[service] worker exit with code: ${code}`)
         this.stop()
-      }
-    )
+      },
+    })
 
     const toMessages = (calls: CallWithMeta[]): L2toL1Message[] => {
       return calls.map((call) => {
