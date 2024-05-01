@@ -1,5 +1,5 @@
 import { parentPort, workerData } from 'worker_threads'
-import { ethers, Contract } from 'ethers'
+import { ethers, Contract, Signer } from 'ethers'
 import { Logger, LogLevel } from '@eth-optimism/common-ts'
 import {
   DeepPartial,
@@ -10,6 +10,7 @@ import {
 import IOasysL2OutputOracle from './contracts/IOasysL2OutputOracle.json'
 import Finalizer from './finalizer'
 import { Portal } from './portal'
+import { TransactionManager } from './transaction-manager'
 
 export type L2toL1Message = {
   blockHeight: number
@@ -40,6 +41,8 @@ export interface WorkerInitData {
   // for portal
   multicallTargetGas: number
   gasMultiplier: number
+  // for transaction manager
+  maxPendingTxs: number
   // json encoded contract list for the CrossChainMessenger
   contractsJSON: string
 }
@@ -56,6 +59,7 @@ const {
   finalizerPrivateKey,
   multicallTargetGas,
   gasMultiplier,
+  maxPendingTxs,
 } = workerData as WorkerInitData
 
 const contracts = JSON.parse(
@@ -87,7 +91,14 @@ const outputOracle = new Contract(
   IOasysL2OutputOracle.abi,
   wallet
 )
-
+let txmgr: TransactionManager
+if (1 < maxPendingTxs) {
+  // temporary fixed as 0
+  // If you're not using txmgr, the confirmationNumber will be zero.
+  // tx.wait() will not confirm any blocks.
+  const confirmationNumber = 0
+  txmgr = new TransactionManager(wallet, maxPendingTxs, confirmationNumber)
+}
 const finalizer = new Finalizer(
   queuePath,
   loopIntervalMs,
@@ -100,6 +111,7 @@ const finalizer = new Finalizer(
     multicallTargetGas,
     gasMultiplier
   ),
+  txmgr,
   (msg: FinalizerMessage) => {
     parentPort?.postMessage(msg)
   }

@@ -11,6 +11,7 @@ import FixedSizeQueue from './queue-mem'
 import { Portal, WithdrawMsgWithMeta } from './portal'
 import { L2toL1Message } from './finalize_worker'
 import { FinalizerMessage } from './finalize_worker'
+import { TransactionManager, ManagingTx } from './transaction-manager'
 
 export default class Finalizer {
   public highestFinalizedL2: number = 0
@@ -24,6 +25,7 @@ export default class Finalizer {
   private logger: Logger
   private messenger: CrossChainMessenger
   private finalizedNotifyer: (msg: FinalizerMessage) => void
+  private txmgr: TransactionManager
 
   constructor(
     queuePath: string,
@@ -32,6 +34,7 @@ export default class Finalizer {
     messenger: CrossChainMessenger,
     outputOracle: Contract,
     portal: Portal,
+    txmgr: TransactionManager,
     notifyer: (msg: FinalizerMessage) => void
   ) {
     logger.info(`[finalizer] queuePath: ${queuePath}`)
@@ -46,9 +49,26 @@ export default class Finalizer {
     this.outputOracle = outputOracle
     this.portal = portal
     this.finalizedNotifyer = notifyer
+    this.txmgr = txmgr
   }
 
   public async start(): Promise<void> {
+    if (this.txmgr) {
+      // setup the subscriber to handle the result of the multicall
+      const subscriber = (txs: ManagingTx[]) => {
+        const calleds: WithdrawMsgWithMeta[] = []
+        const faileds: WithdrawMsgWithMeta[] = []
+        for (const tx of txs) {
+          const calls = tx.meta as WithdrawMsgWithMeta[]
+          calleds.push(...calls)
+          if (tx.err !== undefined) {
+            faileds.push(...calls.map((call) => ({ ...call, err: tx.err })))
+          }
+        }
+        this.handleMulticallResult(calleds, faileds)
+      }
+      this.txmgr.addSubscriber(subscriber)
+    }
     this.logger.info(
       `[finalizer] starting..., loopIntervalMs: ${this.loopIntervalMs}ms`
     )
@@ -116,11 +136,13 @@ export default class Finalizer {
           continue
         }
 
-        // multicall, and handle the result
-        this.handleMulticallResult(
+        // multicall
+        const faileds = await this.portal?.finalizeWithdrawals(
           withdraws,
-          await this.portal?.finalizeWithdrawals(withdraws, null)
+          this.txmgr
         )
+        // handle the result if not using txmgr
+        if (!this.txmgr) this.handleMulticallResult(withdraws, faileds)
 
         // reset calldata list
         withdraws = []
@@ -128,8 +150,11 @@ export default class Finalizer {
 
       // flush the rest of withdraws
       if (0 < withdraws.length) {
-        const faileds = await this.portal?.finalizeWithdrawals(withdraws, null)
-        this.handleMulticallResult(withdraws, faileds)
+        const faileds = await this.portal?.finalizeWithdrawals(
+          withdraws,
+          this.txmgr
+        )
+        if (!this.txmgr) this.handleMulticallResult(withdraws, faileds)
       }
 
       // recursive call
@@ -170,7 +195,7 @@ export default class Finalizer {
     // log the failed list with each error message
     for (const fail of faileds) {
       this.logger.warn(
-        `[finalizer] failed to prove: ${fail.txHash}, err: ${fail.err.message}`
+        `[finalizer] failed to finalize: ${fail.txHash}, err: ${fail.err.message}`
       )
     }
   }

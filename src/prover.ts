@@ -8,6 +8,7 @@ import {
 import { Multicaller, CallWithMeta } from './multicaller'
 import { readFromFile, writeToFile } from './utils'
 import { MessageRelayerMetrics, MessageRelayerState } from './service_types'
+import { TransactionManager, ManagingTx } from './transaction-manager'
 
 export default class Prover {
   public state: MessageRelayerState
@@ -22,6 +23,7 @@ export default class Prover {
   private multicaller: Multicaller
   private postMessage: (succeeds: CallWithMeta[]) => void
   private initalIteration: boolean = true
+  private txmgr: TransactionManager
 
   constructor(
     metrics: MessageRelayerMetrics & StandardMetrics,
@@ -32,6 +34,7 @@ export default class Prover {
     reorgSafetyDepth: number,
     messenger: CrossChainMessenger,
     multicaller: Multicaller,
+    txmgr: TransactionManager | undefined,
     postMessage: (succeeds: CallWithMeta[]) => void
   ) {
     this.stateFilePath = stateFilePath
@@ -40,10 +43,10 @@ export default class Prover {
     this.fromL2TransactionIndex = fromL2TransactionIndex
     this.l2blockConfirmations = l2blockConfirmations
     this.reorgSafetyDepth = reorgSafetyDepth
-
     this.messenger = messenger
     this.multicaller = multicaller
     this.postMessage = postMessage
+    this.txmgr = txmgr
   }
 
   async init() {
@@ -56,6 +59,22 @@ export default class Prover {
     if (this.state.highestProvenL2 < this.fromL2TransactionIndex) {
       this.state.highestProvenL2 = this.fromL2TransactionIndex
       this.state.highestFinalizedL2 = this.fromL2TransactionIndex
+    }
+    if (this.txmgr) {
+      // setup the subscriber to handle the result of the multicall
+      const subscriber = (txs: ManagingTx[]) => {
+        const calleds: CallWithMeta[] = []
+        const faileds: CallWithMeta[] = []
+        for (const tx of txs) {
+          const calls = tx.meta as CallWithMeta[]
+          calleds.push(...calls)
+          if (tx.err !== undefined) {
+            faileds.push(...calls.map((call) => ({ ...call, err: tx.err })))
+          }
+        }
+        this.handleMulticallResult(calleds, faileds)
+      }
+      this.txmgr.addSubscriber(subscriber)
     }
     this.logger.info(`[prover] init: ${JSON.stringify(this.state)}`)
   }
@@ -148,7 +167,7 @@ export default class Prover {
       const callWithMeta = {
         target,
         callData: null,
-        blockHeight: block.number,
+        blockHeight: height,
         txHash,
         message,
         err: null,
@@ -193,12 +212,10 @@ export default class Prover {
         continue
       }
 
-      // multicall, then handle the result
-      // - update the checked L2 height with succeeded calls
-      // - post the proven messages to the finalizer
-      // - log the failed list with each error message
-      const faileds = await this.multicaller?.multicall(calldatas, null)
-      this.handleMulticallResult(calldatas, faileds)
+      // multicall
+      const faileds = await this.multicaller?.multicall(calldatas, this.txmgr)
+      // handle the result if not using txmgr
+      if (!this.txmgr) this.handleMulticallResult(calldatas, faileds)
 
       // reset calldata list
       calldatas = []
@@ -237,10 +254,8 @@ export default class Prover {
 
     // flush the left calldata
     if (0 < calldatas.length) {
-      this.handleMulticallResult(
-        calldatas,
-        await this.multicaller?.multicall(calldatas, null)
-      )
+      const faileds = await this.multicaller?.multicall(calldatas, this.txmgr)
+      if (!this.txmgr) this.handleMulticallResult(calldatas, faileds)
     }
 
     // update the proven L2 height
@@ -249,6 +264,9 @@ export default class Prover {
     }
   }
 
+  // - update the checked L2 height with succeeded calls
+  // - post the proven messages to the finalizer
+  // - log the failed list with each error message
   protected handleMulticallResult(
     calleds: CallWithMeta[],
     faileds: CallWithMeta[]

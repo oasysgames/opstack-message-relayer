@@ -15,13 +15,12 @@ export type MessageRelayerOptions = {
   OutputOracle?: string
   multicallAddress?: string
   multicallTargetGas?: number
-  receiptTimeout?: number
   gasMultiplier?: number
   depositConfirmationBlocks?: number
   l1BlockTimeSeconds?: number
   stateFilePath?: string
-  // l2blockConfirmations?: number
   reorgSafetyDepth?: number
+  maxPendingTxs?: number
   queuePath?: string
   finalizerPrivateKey: string
 }
@@ -73,7 +72,7 @@ export const serviceOptionsSpec: any = {
   gasMultiplier: {
     validator: validators.num,
     desc: 'Gas limit multiplier.',
-    default: 1.01,
+    default: 1.1,
   },
   l1BlockTimeSeconds: {
     validator: validators.num,
@@ -99,6 +98,11 @@ export const serviceOptionsSpec: any = {
     validator: validators.num,
     desc: 'Index of the first L2 transaction to start processing from.',
     default: 0,
+  },
+  maxPendingTxs: {
+    validator: validators.num,
+    desc: 'The maximum number of pending transactions to keep in the queue.',
+    default: 1,
   },
   queuePath: {
     validator: validators.str,
