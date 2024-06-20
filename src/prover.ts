@@ -125,7 +125,7 @@ export default class Prover {
       return calldatas
     }
 
-    this.logger.debug(
+    this.logger.info(
       `[prover] blockNumber: ${block.number}, txs: ${block.transactions.length}`
     )
 
@@ -239,8 +239,12 @@ export default class Prover {
 
     let calldatas: CallWithMeta[] = []
     let waitsStateRoot = false
+    const start = this.startScanHeight()
+    const end = this.endScanHeight(start)
 
-    for (let h = this.startScanHeight(); h <= this.endScanHeight(); h++) {
+    this.logger.info(`[prover] scan block: ${start} - ${end}`)
+
+    for (let h = start; h <= end; h++) {
       try {
         calldatas = await this.handleSingleBlock(h, calldatas)
       } catch (err) {
@@ -260,7 +264,7 @@ export default class Prover {
 
     // update the proven L2 height
     if (!waitsStateRoot) {
-      this.updateHighestProvenL2(this.endScanHeight())
+      this.updateHighestProvenL2(end)
     }
   }
 
@@ -310,9 +314,12 @@ export default class Prover {
     return this.state.highestProvenL2 + 1
   }
 
-  public endScanHeight(): number {
-    const start = this.state.highestKnownL2 - this.l2blockConfirmations
-    return start < 0 ? 0 : start
+  public endScanHeight(start: number): number {
+    const end = this.state.highestKnownL2 - this.l2blockConfirmations
+    if (end < 0) return 0
+    // limit the scan range to 100 blocks
+    if (start + 100 < end) return start + 100
+    return end
   }
 
   protected updateHighestCheckedL2(calldatas: CallWithMeta[]): boolean {
