@@ -10,6 +10,10 @@ import { readFromFile, writeToFile } from './utils'
 import { MessageRelayerMetrics, MessageRelayerState } from './service_types'
 import { TransactionManager, ManagingTx } from './transaction-manager'
 
+// The original address of `L2ERC721Bridge` is `0x4200000000000000000000000000000000000014`
+// But Oasys deployed the contract with the address bellow for backward compatibility
+const OasysL2ERC721BridgeAddress = '0x6200000000000000000000000000000000000001'
+
 export default class Prover {
   public state: MessageRelayerState
 
@@ -133,22 +137,22 @@ export default class Prover {
       this.messenger.contracts.l1.OptimismPortal.address ||
       this.messenger.contracts.l1.OptimismPortal.target
 
+    const l2StandardBridge = this.messenger.contracts.l2.L2StandardBridge
+      .address
+      ? this.messenger.contracts.l2.L2StandardBridge.address
+      : this.messenger.contracts.l2.L2StandardBridge.target
+    const bridges = [OasysL2ERC721BridgeAddress, l2StandardBridge]
+
     for (let j = 0; j < block.transactions.length; j++) {
       const txHash = block.transactions[j].hash
+      const to = block.transactions[j].to
 
-      // Don't use toCrossChainMessage, as it call L1 endpont leading to slow down
-      // try {
-      //   message = await this.messenger.toCrossChainMessage(txHash)
-      // } catch (err) {
-      //   // skip if the tx is not a cross-chain message
-      //   const noWithdrawMsg = 'withdrawal index 0 out of bounds'
-      //   if (err.message.includes(noWithdrawMsg)) {
-      //     this.logger.debug(`[prover] skip txHash: ${txHash}`)
-      //     continue
-      //   }
-      //   // otherwise, throw the error
-      //   throw err
-      // }
+      // skip if the tx is not sent to the bridge
+      if (bridges.indexOf(to) === -1) {
+        continue
+      }
+
+      // NOTE: Don't use `toCrossChainMessage`, as it call L1 endpont leading to slow down
       const messages = await this.messenger.getMessagesByTransaction(txHash, {
         direction: MessageDirection.L2_TO_L1,
       })

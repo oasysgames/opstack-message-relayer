@@ -123,7 +123,7 @@ describe('Prover', function () {
 
   describe('handleSingleBlock', function () {
     it('succeed: without txmgr', async function () {
-      const { counter, prover, messenger } = await setup()
+      const { counter, prover, messenger, signers } = await setup()
       const height = 134
       const calldatas = [
         {
@@ -147,14 +147,22 @@ describe('Prover', function () {
             {
               number: height,
               hash: '0x3',
+              to: counter.address,
             },
             {
               number: height,
               hash: '0x4',
+              to: counter.address,
             },
             {
               number: height,
               hash: '0x5',
+              to: counter.address,
+            },
+            {
+              number: height,
+              hash: '0x6',
+              to: signers[0].address, // should be ignored
             },
           ],
         },
@@ -201,14 +209,17 @@ describe('Prover', function () {
             {
               number: height,
               hash: '0x3',
+              to: counter.address,
             },
             {
               number: height,
               hash: '0x4',
+              to: counter.address,
             },
             {
               number: height,
               hash: '0x5',
+              to: counter.address,
             },
           ],
         },
