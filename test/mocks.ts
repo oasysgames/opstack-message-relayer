@@ -27,6 +27,9 @@ export class MockCrossChain {
           },
         },
       },
+      l2: {
+        L2StandardBridge: contract,
+      },
     }
     this.estimateGas = {
       finalizeMessage: async (txhash: any): Promise<bigint> => {
@@ -77,6 +80,9 @@ export class MockCrossChainForProver {
         OptimismPortal: {
           target: contract.address,
         },
+      },
+      l2: {
+        L2StandardBridge: contract,
       },
     }
     this.estimateGas = {
