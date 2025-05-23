@@ -1,14 +1,13 @@
-import { BytesLike } from '@ethersproject/bytes'
 import { BigNumber, Contract, Signer } from 'ethers'
 import { LowLevelMessage } from '@eth-optimism/sdk'
 import IOasysPortal from './contracts/IOasysPortal.json'
 import { splitArray } from './utils'
 import { TransactionManager } from './transaction-manager'
+import { L2toL1Message } from './finalize_worker'
 
 export type WithdrawMsgWithMeta = LowLevelMessage & {
-  blockHeight: number
-  txHash: string
-  err: Error
+  l2toL1Msg: L2toL1Message
+  err: Error | null
 }
 
 type WithdrawalTransactionContractCall = {

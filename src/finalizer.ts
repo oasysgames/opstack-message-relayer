@@ -113,8 +113,7 @@ export default class Finalizer {
 
         const withdraw = {
           ...lowLevelMessage,
-          blockHeight: head.blockHeight,
-          txHash,
+          l2toL1Msg: head,
           err: null,
         }
 
@@ -172,13 +171,13 @@ export default class Finalizer {
     calleds: WithdrawMsgWithMeta[],
     faileds: WithdrawMsgWithMeta[]
   ): void {
-    const failedIds = new Set(faileds.map((failed) => failed.txHash))
-    const succeeds = calleds.filter((call) => !failedIds.has(call.txHash))
+    const failedIds = new Set(faileds.map((failed) => failed.l2toL1Msg.txHash))
+    const succeeds = calleds.filter((call) => !failedIds.has(call.l2toL1Msg.txHash))
 
     if (0 < succeeds.length) {
       this.logger.info(
         `[finalizer] succeeded(${succeeds.length}) txHash: ${succeeds.map(
-          (call) => call.txHash
+          (call) => call.l2toL1Msg.txHash
         )}`
       )
       // update the highest finalized L2
@@ -192,11 +191,16 @@ export default class Finalizer {
       }
     }
 
-    // log the failed list with each error message
+    // Log the failed list and enqueue the failed message to the queue for retry
+    const failedL2toL1Msgs: L2toL1Message[] = []
     for (const fail of faileds) {
       this.logger.warn(
-        `[finalizer] failed to finalize: ${fail.txHash}, err: ${fail.err.message}`
+        `[finalizer] failed to finalize: ${fail.l2toL1Msg.txHash}, err: ${fail.err.message}`
       )
+      failedL2toL1Msgs.push(fail.l2toL1Msg)
+    }
+    if (0 < failedL2toL1Msgs.length) {
+      this.queue.enqueueNoDuplicate(...failedL2toL1Msgs)
     }
   }
 
@@ -235,11 +239,11 @@ export default class Finalizer {
 
   protected updateHighestFinalized(withdraws: WithdrawMsgWithMeta[]): boolean {
     let highest = withdraws.reduce((maxCall, currentCall) => {
-      if (!maxCall || currentCall.blockHeight > maxCall.blockHeight) {
+      if (!maxCall || currentCall.l2toL1Msg.blockHeight > maxCall.l2toL1Msg.blockHeight) {
         return currentCall
       }
       return maxCall
-    }).blockHeight
+    }).l2toL1Msg.blockHeight
     if (0 < highest) highest -= 1 // subtract `1` to assure the all transaction in block is finalized
     if (highest <= this.highestFinalizedL2) return false
 

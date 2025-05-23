@@ -229,7 +229,7 @@ describe('Prover', function () {
       const returns = await prover.handleSingleBlock(height, calldatas)
 
       // wait until tx confirmed
-      await sleep(55)
+      await sleep(100)
       expect(returns.length).to.equal(1)
       expect(returns[0].txHash).to.equal('0x5')
       expect(prover.highestProvenL2()).to.equal(height - 1)
