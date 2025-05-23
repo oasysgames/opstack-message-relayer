@@ -82,7 +82,7 @@ describe('TransactionManager', function () {
       await txmgr.enqueueTransaction({ populated })
 
       // wait until tx sent
-      await sleep(55)
+      await sleep(100)
       expect(txmgr.getUnconfirmedTransactions().length).to.equal(2)
       await ethers.provider.send('hardhat_mine', ['0x1'])
 
@@ -104,7 +104,7 @@ describe('TransactionManager', function () {
       expect(txmgr.pendingIsFull()).to.equal(true)
 
       // wait until tx sent
-      await sleep(55)
+      await sleep(100)
       expect(txmgr.getUnconfirmedTransactions().length).to.equal(2)
       await ethers.provider.send('hardhat_mine', ['0x1'])
 
@@ -133,7 +133,7 @@ describe('TransactionManager', function () {
       await txmgr.enqueueTransaction({ populated })
 
       // wait until tx sent
-      await sleep(55)
+      await sleep(100)
       expect(txmgr.getUnconfirmedTransactions().length).to.equal(2)
 
       // stop
@@ -166,7 +166,7 @@ describe('TransactionManager', function () {
       await txmgr.enqueueTransaction({ populated: revertPopulated })
 
       // wait until tx sent
-      await sleep(55)
+      await sleep(100)
       expect(txmgr.getUnconfirmedTransactions().length).to.equal(2)
       await ethers.provider.send('hardhat_mine', ['0x1'])
 
