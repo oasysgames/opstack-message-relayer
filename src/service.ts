@@ -22,7 +22,7 @@ import FinalizeWorkCreator from './worker_creator'
 import { FinalizerMessage, L2toL1Message } from './finalize_worker'
 import { MessageRelayerMetrics, MessageRelayerState } from './service_types'
 import Prover from './prover'
-import { ZERO_ADDRESS, sleep } from './utils'
+import { ZERO_ADDRESS, maskPrivateKey } from './utils'
 import { TransactionManager } from './transaction-manager'
 
 export class MessageRelayerService extends BaseServiceV2<
@@ -53,7 +53,10 @@ export class MessageRelayerService extends BaseServiceV2<
   }
 
   protected async init(): Promise<void> {
-    this.logger.info('[service] startup options', this.options)
+    this.logger.info(
+      '[service] startup options',
+      maskPrivateKey<any>(this.options, 'finalizerPrivateKey')
+    )
 
     this.wallet = this.options.proverPrivateKey.connect(
       this.options.l1RpcProvider

@@ -60,3 +60,10 @@ export async function deleteFileIfExists(filePath: string): Promise<void> {
     throw error // rethrow the error if you want to handle it outside of the function
   }
 }
+
+export function maskPrivateKey<T>(obj: T, keyName: string): T {
+  const maskedObj = { ...obj }
+  if (!maskedObj[keyName]) throw new Error(`failed to mask ${keyName}`)
+  maskedObj[keyName] = `${maskedObj[keyName].slice(0, 6)}...`
+  return maskedObj
+}
