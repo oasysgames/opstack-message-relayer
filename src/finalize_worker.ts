@@ -1,5 +1,5 @@
 import { parentPort, workerData } from 'worker_threads'
-import { ethers, Contract, Signer } from 'ethers'
+import { ethers, Contract } from 'ethers'
 import { Logger, LogLevel } from '@eth-optimism/common-ts'
 import {
   DeepPartial,
@@ -11,6 +11,7 @@ import IOasysL2OutputOracle from './contracts/IOasysL2OutputOracle.json'
 import Finalizer from './finalizer'
 import { Portal } from './portal'
 import { TransactionManager } from './transaction-manager'
+import { maskPrivateKey } from './utils'
 
 export type L2toL1Message = {
   blockHeight: number
@@ -71,7 +72,10 @@ const logger = new Logger({
   level: logLevel,
 })
 
-logger.info(`[finalize worker] workerData`, workerData)
+logger.info(
+  `[finalize worker] workerData`,
+  maskPrivateKey<any>(workerData, 'finalizerPrivateKey')
+)
 
 const provider = new ethers.providers.JsonRpcProvider(l1RpcEndpoint)
 const wallet = new ethers.Wallet(finalizerPrivateKey, provider)
