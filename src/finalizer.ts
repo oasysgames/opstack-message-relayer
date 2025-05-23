@@ -172,7 +172,9 @@ export default class Finalizer {
     faileds: WithdrawMsgWithMeta[]
   ): void {
     const failedIds = new Set(faileds.map((failed) => failed.l2toL1Msg.txHash))
-    const succeeds = calleds.filter((call) => !failedIds.has(call.l2toL1Msg.txHash))
+    const succeeds = calleds.filter(
+      (call) => !failedIds.has(call.l2toL1Msg.txHash)
+    )
 
     if (0 < succeeds.length) {
       this.logger.info(
@@ -239,7 +241,10 @@ export default class Finalizer {
 
   protected updateHighestFinalized(withdraws: WithdrawMsgWithMeta[]): boolean {
     let highest = withdraws.reduce((maxCall, currentCall) => {
-      if (!maxCall || currentCall.l2toL1Msg.blockHeight > maxCall.l2toL1Msg.blockHeight) {
+      if (
+        !maxCall ||
+        currentCall.l2toL1Msg.blockHeight > maxCall.l2toL1Msg.blockHeight
+      ) {
         return currentCall
       }
       return maxCall
