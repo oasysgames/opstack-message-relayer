@@ -98,22 +98,30 @@ export class Portal {
       gasLimit: ~~(estimatedGas.toNumber() * this.gasMultiplier),
     }
 
-    if (txmgr) {
-      // enqueue the tx to the waiting list
-      const populated =
-        await this.contract.populateTransaction.finalizeWithdrawalTransactions(
+    try {
+      if (txmgr) {
+        // enqueue the tx to the waiting list
+        const populated =
+          await this.contract.populateTransaction.finalizeWithdrawalTransactions(
+            calls,
+            overrideOptions
+          )
+        await txmgr.enqueueTransaction({ populated, meta: withdraws })
+      } else {
+        // send the tx directly
+        const tx = await this.contract.finalizeWithdrawalTransactions(
           calls,
           overrideOptions
         )
-      await txmgr.enqueueTransaction({ populated, meta: withdraws })
-    } else {
-      // send the tx directly
-      const tx = await this.contract.finalizeWithdrawalTransactions(
-        calls,
-        overrideOptions
-      )
-      await tx.wait() // wait internally doesn't confirm block.
-      if (callback) callback(tx.hash, withdraws)
+        await tx.wait() // wait internally doesn't confirm block.
+        if (callback) callback(tx.hash, withdraws)
+      }
+    } catch (err) {
+      // if the tx failed, set the error to each withdraw
+      for (const withdraw of withdraws) {
+        withdraw.err = err as Error
+      }
+      return withdraws
     }
 
     return []

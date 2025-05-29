@@ -220,6 +220,8 @@ export default class Prover {
       const faileds = await this.multicaller?.multicall(calldatas, this.txmgr)
       // handle the result if not using txmgr
       if (!this.txmgr) this.handleMulticallResult(calldatas, faileds)
+      // stop immediately iterating next tx
+      if (faileds.length > 0) throw new Error('mulicall failed')
 
       // reset calldata list
       calldatas = []
@@ -255,6 +257,8 @@ export default class Prover {
         if (err.message.includes('not state root published')) {
           waitsStateRoot = true
           break
+        } else if (err.message.includes('mulicall failed')) {
+          return
         }
         throw err
       }
@@ -264,6 +268,7 @@ export default class Prover {
     if (0 < calldatas.length) {
       const faileds = await this.multicaller?.multicall(calldatas, this.txmgr)
       if (!this.txmgr) this.handleMulticallResult(calldatas, faileds)
+      if (faileds.length > 0) return
     }
 
     // update the proven L2 height
@@ -281,7 +286,6 @@ export default class Prover {
   ): void {
     const failedIds = new Set(faileds.map((failed) => failed.txHash))
     const succeeds = calleds.filter((call) => !failedIds.has(call.txHash))
-
     if (0 < succeeds.length) {
       this.logger.info(
         `[prover] succeeded(${succeeds.length}) txHash: ${succeeds.map(
@@ -296,11 +300,15 @@ export default class Prover {
       this.postMessage(succeeds)
     }
 
-    // record log the failed list with each error message
-    for (const fail of faileds) {
+    // log the called list, then rewind the checked L2 height
+    if (0 < faileds.length) {
       this.logger.warn(
-        `[prover] failed to prove: ${fail.txHash}, err: ${fail.err.message}`
+        `[prover] failed(${faileds.length}), txHash: ${faileds.map(
+          (call) => call.txHash
+        )}, errs: ${faileds.map((call) => call.err.message).join(', ')}`
       )
+      // rewind the checked L2 height by the lowest failed call block height - 1
+      this.updateLowestCheckedL2(faileds)
     }
   }
 
@@ -336,6 +344,22 @@ export default class Prover {
     if (0 < highest) highest -= 1 // subtract `1` to assure the all transaction in block is finalized
     if (highest <= this.state.highestProvenL2) return false
     this.updateHighestProvenL2(highest)
+    return true
+  }
+
+  protected updateLowestCheckedL2(calldatas: CallWithMeta[]): boolean {
+    let lowest = calldatas.reduce((minCall, currentCall) => {
+      if (!minCall || currentCall.blockHeight < minCall.blockHeight) {
+        return currentCall
+      }
+      return minCall
+    }).blockHeight
+    if (0 < lowest) lowest -= 1 // subtract `1` to assure the all transaction in block is finalized
+    if (lowest >= this.state.highestProvenL2) return false
+    this.logger.warn(
+      `[prover] rewind highestProvenL2: ${this.state.highestProvenL2} -> ${lowest}`
+    )
+    this.updateHighestProvenL2(lowest)
     return true
   }
 

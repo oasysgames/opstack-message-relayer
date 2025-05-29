@@ -23,6 +23,7 @@ describe('FixedSizeQueue', function () {
       queue.enqueue(6, 7, 8, 9, 10)
       expect(queue.count).to.equal(10)
       expect(queue.isFull()).to.true
+      expect(queue.peekAll()).to.deep.equal([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 
       // enqueue more than limit, throw error with message
       try {

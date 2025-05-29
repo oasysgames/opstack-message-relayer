@@ -7,7 +7,6 @@ import {
 } from '@eth-optimism/sdk'
 import { Contract } from 'ethers'
 import DynamicSizeQueue from './queue-storage'
-import FixedSizeQueue from './queue-mem'
 import { Portal, WithdrawMsgWithMeta } from './portal'
 import { L2toL1Message } from './finalize_worker'
 import { FinalizerMessage } from './finalize_worker'
@@ -15,7 +14,7 @@ import { TransactionManager, ManagingTx } from './transaction-manager'
 
 export default class Finalizer {
   public highestFinalizedL2: number = 0
-  public queue: DynamicSizeQueue<L2toL1Message> | FixedSizeQueue<L2toL1Message>
+  public queue: DynamicSizeQueue<L2toL1Message>
   public portal: Portal
   public running: boolean
 
@@ -38,11 +37,7 @@ export default class Finalizer {
     notifyer: (msg: FinalizerMessage) => void
   ) {
     logger.info(`[finalizer] queuePath: ${queuePath}`)
-    if (queuePath !== '') {
-      this.queue = new DynamicSizeQueue<L2toL1Message>(queuePath)
-    } else {
-      this.queue = new FixedSizeQueue<L2toL1Message>(1024)
-    }
+    this.queue = new DynamicSizeQueue<L2toL1Message>(queuePath)
     this.loopIntervalMs = loopIntervalMs
     this.logger = logger
     this.messenger = messenger
@@ -76,9 +71,9 @@ export default class Finalizer {
     const itr = async () => {
       let withdraws: WithdrawMsgWithMeta[] = []
 
-      // traverse the queue
-      while (this.queue.count !== 0) {
-        const head = this.queue.peek()
+      // iterate over entire queue
+      const messages = this.queue.peekAll()
+      for (const head of messages) {
         const txHash = head.txHash
         const message = head.message
         const status = await this.messenger.getMessageStatus(message)
@@ -104,21 +99,20 @@ export default class Finalizer {
           lowLevelMessage = await this.messenger.toLowLevelMessage(message)
         } else if (MessageStatus.READY_FOR_RELAY < status) {
           // already finalized
-          this.queue.dequeue() // evict the head from queue
           this.logger.debug(
             `[finalizer] message ${message} is already relayed, txhash: ${txHash}, blockHeight: ${head.blockHeight}`
           )
+          this.queue.evict(head) // evict the head from queue
           continue
         }
 
+        // append to list
         const withdraw = {
           ...lowLevelMessage,
           l2toL1Msg: head,
           err: null,
         }
-
-        withdraws.push(withdraw) // append to list
-        this.queue.dequeue() // evict the head from queue
+        withdraws.push(withdraw)
 
         // Estimate gas cost for the future forecasting the finalize gas cost
         // Compute per withdraw gas by substracting double withdraw gas from single withdraw gas
@@ -164,18 +158,28 @@ export default class Finalizer {
 
     // first call
     this.running = true
-    itr()
+    try {
+      await itr()
+    } catch (err) {
+      this.logger.error(
+        `[finalizer] error occurred during finalization: ${err.message}`
+      )
+      throw err
+    }
   }
 
   protected handleMulticallResult(
     calleds: WithdrawMsgWithMeta[],
     faileds: WithdrawMsgWithMeta[]
   ): void {
+    // evict the processed messages, then enqueue the failed messages
+    this.queue.evict(...calleds.map((call) => call.l2toL1Msg))
+    this.queue.enqueue(...faileds.map((call) => call.l2toL1Msg))
+
     const failedIds = new Set(faileds.map((failed) => failed.l2toL1Msg.txHash))
     const succeeds = calleds.filter(
       (call) => !failedIds.has(call.l2toL1Msg.txHash)
     )
-
     if (0 < succeeds.length) {
       this.logger.info(
         `[finalizer] succeeded(${succeeds.length}) txHash: ${succeeds.map(
@@ -193,16 +197,13 @@ export default class Finalizer {
       }
     }
 
-    // Log the failed list and enqueue the failed message to the queue for retry
-    const failedL2toL1Msgs: L2toL1Message[] = []
-    for (const fail of faileds) {
+    // log the failed list
+    if (0 < faileds.length) {
       this.logger.warn(
-        `[finalizer] failed to finalize: ${fail.l2toL1Msg.txHash}, err: ${fail.err.message}`
+        `[finalizer] failed(${faileds.length}), txHashes: ${faileds.map(
+          (fail) => fail.l2toL1Msg.txHash
+        )}, errs: ${faileds.map((fail) => fail.err.message).join(', ')}`
       )
-      failedL2toL1Msgs.push(fail.l2toL1Msg)
-    }
-    if (0 < failedL2toL1Msgs.length) {
-      this.queue.enqueueNoDuplicate(...failedL2toL1Msgs)
     }
   }
 

@@ -78,23 +78,31 @@ export class Multicaller {
       gasLimit: ~~(estimatedGas.toNumber() * this.gasMultiplier),
     }
 
-    if (txmgr) {
-      // enqueue the tx to the waiting list
-      const populated = await this.contract.populateTransaction.tryAggregate(
-        requireSuccess,
-        this.convertToCalls(calls),
-        overrideOptions
-      )
-      await txmgr.enqueueTransaction({ populated, meta: calls })
-    } else {
-      // send the tx directly
-      const tx = await this.contract.tryAggregate(
-        requireSuccess,
-        this.convertToCalls(calls),
-        overrideOptions
-      )
-      await tx.wait() // wait internally doesn't confirm block.
-      if (callback) callback(tx.hash, calls)
+    try {
+      if (txmgr) {
+        // enqueue the tx to the waiting list
+        const populated = await this.contract.populateTransaction.tryAggregate(
+          requireSuccess,
+          this.convertToCalls(calls),
+          overrideOptions
+        )
+        await txmgr.enqueueTransaction({ populated, meta: calls })
+      } else {
+        // send the tx directly
+        const tx = await this.contract.tryAggregate(
+          requireSuccess,
+          this.convertToCalls(calls),
+          overrideOptions
+        )
+        await tx.wait() // wait internally doesn't confirm block.
+        if (callback) callback(tx.hash, calls)
+      }
+    } catch (err) {
+      // if the tx failed, set the error to each call
+      for (const call of calls) {
+        call.err = err as Error
+      }
+      return calls
     }
 
     return []
