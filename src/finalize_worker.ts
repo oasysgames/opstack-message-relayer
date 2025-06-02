@@ -95,7 +95,7 @@ const outputOracle = new Contract(
   IOasysL2OutputOracle.abi,
   wallet
 )
-let txmgr: TransactionManager
+let txmgr: TransactionManager | undefined
 if (1 < maxPendingTxs) {
   // temporary fixed as 0
   // If you're not using txmgr, the confirmationNumber will be zero.
@@ -113,7 +113,8 @@ const finalizer = new Finalizer(
     contracts.l1.OptimismPortal as string,
     wallet,
     multicallTargetGas,
-    gasMultiplier
+    gasMultiplier,
+    txmgr
   ),
   txmgr,
   (msg: FinalizerMessage) => {

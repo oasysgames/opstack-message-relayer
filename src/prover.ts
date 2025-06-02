@@ -27,7 +27,7 @@ export default class Prover {
   private multicaller: Multicaller
   private postMessage: (succeeds: CallWithMeta[]) => void
   private initalIteration: boolean = true
-  private txmgr: TransactionManager
+  private txmgr: TransactionManager | undefined
 
   constructor(
     metrics: MessageRelayerMetrics & StandardMetrics,
@@ -50,21 +50,10 @@ export default class Prover {
     this.messenger = messenger
     this.multicaller = multicaller
     this.postMessage = postMessage
-    this.txmgr = txmgr
-  }
 
-  async init() {
-    const state = await this.readStateFromFile()
-    this.state = state || {
-      highestKnownL2: 0,
-      highestProvenL2: 0,
-      highestFinalizedL2: 0,
-    }
-    if (this.state.highestProvenL2 < this.fromL2TransactionIndex) {
-      this.state.highestProvenL2 = this.fromL2TransactionIndex
-      this.state.highestFinalizedL2 = this.fromL2TransactionIndex
-    }
-    if (this.txmgr) {
+    if (txmgr) {
+      this.txmgr = txmgr
+
       // setup the subscriber to handle the result of the multicall
       const subscriber = (txs: ManagingTx[]) => {
         const calleds: CallWithMeta[] = []
@@ -80,6 +69,20 @@ export default class Prover {
       }
       this.txmgr.addSubscriber(subscriber)
     }
+  }
+
+  async init() {
+    const state = await this.readStateFromFile()
+    this.state = state || {
+      highestKnownL2: 0,
+      highestProvenL2: 0,
+      highestFinalizedL2: 0,
+    }
+    if (this.state.highestProvenL2 < this.fromL2TransactionIndex) {
+      this.state.highestProvenL2 = this.fromL2TransactionIndex
+      this.state.highestFinalizedL2 = this.fromL2TransactionIndex
+    }
+
     this.logger.info(`[prover] init: ${JSON.stringify(this.state)}`)
   }
 
@@ -217,7 +220,7 @@ export default class Prover {
       }
 
       // multicall
-      const faileds = await this.multicaller?.multicall(calldatas, this.txmgr)
+      const faileds = await this.multicaller?.multicall(calldatas)
       // handle the result if not using txmgr
       if (!this.txmgr) this.handleMulticallResult(calldatas, faileds)
       // stop immediately iterating next tx
@@ -266,7 +269,7 @@ export default class Prover {
 
     // flush the left calldata
     if (0 < calldatas.length) {
-      const faileds = await this.multicaller?.multicall(calldatas, this.txmgr)
+      const faileds = await this.multicaller?.multicall(calldatas)
       if (!this.txmgr) this.handleMulticallResult(calldatas, faileds)
       if (faileds.length > 0) return
     }

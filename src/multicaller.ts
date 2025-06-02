@@ -22,16 +22,19 @@ export class Multicaller {
   public gasMultiplier: number
   public targetGas: number
   public contract: Contract
+  private txmgr: TransactionManager | undefined
 
   constructor(
     multicallAddress: string,
     wallet: Signer,
     targetGas: number = 1000000,
-    gasMultiplier: number = 1.1
+    gasMultiplier: number = 1.1,
+    txmgr?: TransactionManager
   ) {
     this.contract = new Contract(multicallAddress, Multicall2.abi, wallet)
     this.targetGas = targetGas
     this.gasMultiplier = gasMultiplier
+    this.txmgr = txmgr
   }
 
   public isOverTargetGas(size: number): boolean {
@@ -41,7 +44,6 @@ export class Multicaller {
   // Return failed calls
   public async multicall(
     calls: CallWithMeta[],
-    txmgr: TransactionManager | undefined,
     callback: (hash: string, calls: CallWithMeta[]) => void | null = null
   ): Promise<CallWithMeta[] /*failed list*/> {
     const requireSuccess = true
@@ -67,11 +69,8 @@ export class Multicaller {
 
       // split the array in half and recursively call
       const [firstHalf, secondHalf] = splitArray(calls)
-      const results = await this.multicall(firstHalf, txmgr, callback)
-      return [
-        ...results,
-        ...(await this.multicall(secondHalf, txmgr, callback)),
-      ]
+      const results = await this.multicall(firstHalf, callback)
+      return [...results, ...(await this.multicall(secondHalf, callback))]
     }
 
     const overrideOptions = {
@@ -79,14 +78,14 @@ export class Multicaller {
     }
 
     try {
-      if (txmgr) {
+      if (this.txmgr) {
         // enqueue the tx to the waiting list
         const populated = await this.contract.populateTransaction.tryAggregate(
           requireSuccess,
           this.convertToCalls(calls),
           overrideOptions
         )
-        await txmgr.enqueueTransaction({ populated, meta: calls })
+        await this.txmgr.enqueueTransaction({ populated, meta: calls })
       } else {
         // send the tx directly
         const tx = await this.contract.tryAggregate(

@@ -30,16 +30,19 @@ export class Portal {
   public gasMultiplier: number
   public targetGas: number
   public contract: Contract
+  private txmgr: TransactionManager | undefined
 
   constructor(
     portalAddress: string,
     wallet: Signer,
     targetGas: number = 1000000,
-    gasMultiplier: number = 1.1
+    gasMultiplier: number = 1.1,
+    txmgr?: TransactionManager
   ) {
     this.contract = new Contract(portalAddress, IOasysPortal.abi, wallet)
     this.targetGas = targetGas
     this.gasMultiplier = gasMultiplier
+    this.txmgr = txmgr
   }
 
   public setGasFieldsToEstimate(gas: number): void {
@@ -60,7 +63,6 @@ export class Portal {
   // Return failed withdraws
   public async finalizeWithdrawals(
     withdraws: WithdrawMsgWithMeta[],
-    txmgr: TransactionManager | undefined,
     callback: (
       hash: string,
       withdraws: WithdrawMsgWithMeta[]
@@ -87,10 +89,10 @@ export class Portal {
 
       // split the array in half and recursively call
       const [firstHalf, secondHalf] = splitArray(withdraws)
-      const results = await this.finalizeWithdrawals(firstHalf, txmgr, callback)
+      const results = await this.finalizeWithdrawals(firstHalf, callback)
       return [
         ...results,
-        ...(await this.finalizeWithdrawals(secondHalf, txmgr, callback)),
+        ...(await this.finalizeWithdrawals(secondHalf, callback)),
       ]
     }
 
@@ -99,14 +101,14 @@ export class Portal {
     }
 
     try {
-      if (txmgr) {
+      if (this.txmgr) {
         // enqueue the tx to the waiting list
         const populated =
           await this.contract.populateTransaction.finalizeWithdrawalTransactions(
             calls,
             overrideOptions
           )
-        await txmgr.enqueueTransaction({ populated, meta: withdraws })
+        await this.txmgr.enqueueTransaction({ populated, meta: withdraws })
       } else {
         // send the tx directly
         const tx = await this.contract.finalizeWithdrawalTransactions(

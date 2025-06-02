@@ -88,11 +88,25 @@ export class MessageRelayerService extends BaseServiceV2<
       bedrock: true,
     })
 
+    let txmgr: TransactionManager
+    if (1 < this.options.maxPendingTxs) {
+      // temporary fixed as 0
+      // If you're not using txmgr, the confirmationNumber will be zero.
+      // tx.wait() will not confirm any blocks.
+      const confirmationNumber = 0
+      txmgr = new TransactionManager(
+        this.wallet,
+        this.options.maxPendingTxs,
+        confirmationNumber
+      )
+    }
+
     this.multicaller = new Multicaller(
       this.options.multicallAddress,
       this.wallet,
       this.options.multicallTargetGas,
-      this.options.gasMultiplier
+      this.options.gasMultiplier,
+      txmgr
     )
 
     const l1RpcEndpoint = (
@@ -134,18 +148,7 @@ export class MessageRelayerService extends BaseServiceV2<
         }
       })
     }
-    let txmgr: TransactionManager
-    if (1 < this.options.maxPendingTxs) {
-      // temporary fixed as 0
-      // If you're not using txmgr, the confirmationNumber will be zero.
-      // tx.wait() will not confirm any blocks.
-      const confirmationNumber = 0
-      txmgr = new TransactionManager(
-        this.wallet,
-        this.options.maxPendingTxs,
-        confirmationNumber
-      )
-    }
+
     this.prover = new Prover(
       this.metrics,
       this.logger,

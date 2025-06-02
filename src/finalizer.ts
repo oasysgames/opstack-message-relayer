@@ -24,7 +24,7 @@ export default class Finalizer {
   private logger: Logger
   private messenger: CrossChainMessenger
   private finalizedNotifyer: (msg: FinalizerMessage) => void
-  private txmgr: TransactionManager
+  private txmgr: TransactionManager | undefined
 
   constructor(
     queuePath: string,
@@ -33,7 +33,7 @@ export default class Finalizer {
     messenger: CrossChainMessenger,
     outputOracle: Contract,
     portal: Portal,
-    txmgr: TransactionManager,
+    txmgr: TransactionManager | undefined,
     notifyer: (msg: FinalizerMessage) => void
   ) {
     logger.info(`[finalizer] queuePath: ${queuePath}`)
@@ -44,11 +44,10 @@ export default class Finalizer {
     this.outputOracle = outputOracle
     this.portal = portal
     this.finalizedNotifyer = notifyer
-    this.txmgr = txmgr
-  }
 
-  public async start(): Promise<void> {
-    if (this.txmgr) {
+    if (txmgr) {
+      this.txmgr = txmgr
+
       // setup the subscriber to handle the result of the multicall
       const subscriber = (txs: ManagingTx[]) => {
         const calleds: WithdrawMsgWithMeta[] = []
@@ -64,6 +63,9 @@ export default class Finalizer {
       }
       this.txmgr.addSubscriber(subscriber)
     }
+  }
+
+  public async start(): Promise<void> {
     this.logger.info(
       `[finalizer] starting..., loopIntervalMs: ${this.loopIntervalMs}ms`
     )
@@ -130,11 +132,8 @@ export default class Finalizer {
         }
 
         // multicall
-        const faileds = await this.portal?.finalizeWithdrawals(
-          withdraws,
-          this.txmgr
-        )
-        // handle the result if not using txmgr
+        const faileds = await this.portal?.finalizeWithdrawals(withdraws)
+        // handle the result
         if (!this.txmgr) this.handleMulticallResult(withdraws, faileds)
 
         // reset calldata list
@@ -143,10 +142,7 @@ export default class Finalizer {
 
       // flush the rest of withdraws
       if (0 < withdraws.length) {
-        const faileds = await this.portal?.finalizeWithdrawals(
-          withdraws,
-          this.txmgr
-        )
+        const faileds = await this.portal?.finalizeWithdrawals(withdraws)
         if (!this.txmgr) this.handleMulticallResult(withdraws, faileds)
       }
 
