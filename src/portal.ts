@@ -108,8 +108,12 @@ export class Portal {
             calls,
             overrideOptions
           )
-        await this.txmgr.enqueueTransaction({ populated, meta: withdraws })
+        await this.txmgr.enqueueTransaction({
+          populated,
+          meta: structuredClone(withdraws),
+        })
       } else {
+        // if (Math.random() < 0.7) throw new Error(`finalizer: random error`) // for testing
         // send the tx directly
         const tx = await this.contract.finalizeWithdrawalTransactions(
           calls,

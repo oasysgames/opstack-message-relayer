@@ -85,8 +85,12 @@ export class Multicaller {
           this.convertToCalls(calls),
           overrideOptions
         )
-        await this.txmgr.enqueueTransaction({ populated, meta: calls })
+        await this.txmgr.enqueueTransaction({
+          populated,
+          meta: structuredClone(calls),
+        })
       } else {
+        // if (Math.random() < 0.7) throw new Error(`prover: random error`) // for testing
         // send the tx directly
         const tx = await this.contract.tryAggregate(
           requireSuccess,

@@ -81,7 +81,13 @@ export default class Finalizer {
         const status = await this.messenger.getMessageStatus(message)
         let lowLevelMessage: LowLevelMessage
 
-        if (MessageStatus.READY_FOR_RELAY > status) {
+        if (status <= MessageStatus.READY_TO_PROVE) {
+          // Not yet proven, so skip. Ocacsionally happens when txmgr is used.
+          this.logger.warn(
+            `[finalizer] message is not proven yet, txhash: ${txHash}, blockHeight: ${head.blockHeight}, status: ${status}`
+          )
+          continue
+        } else if (status < MessageStatus.READY_FOR_RELAY) {
           // still in challenge period
           lowLevelMessage = await this.messenger.toLowLevelMessage(message)
 
@@ -96,7 +102,7 @@ export default class Finalizer {
             )
             break
           }
-        } else if (MessageStatus.READY_FOR_RELAY === status) {
+        } else if (status == MessageStatus.READY_FOR_RELAY) {
           // ready for finalize
           lowLevelMessage = await this.messenger.toLowLevelMessage(message)
         } else if (MessageStatus.READY_FOR_RELAY < status) {
@@ -104,7 +110,7 @@ export default class Finalizer {
           this.logger.debug(
             `[finalizer] message ${message} is already relayed, txhash: ${txHash}, blockHeight: ${head.blockHeight}`
           )
-          this.queue.evict(head) // evict the head from queue
+          this.queue.evictIgnoreNotFound(head) // // evict from queue
           continue
         }
 
@@ -137,7 +143,7 @@ export default class Finalizer {
         if (!this.txmgr) this.handleMulticallResult(withdraws, faileds)
 
         // reset calldata list
-        withdraws = []
+        withdraws.length = 0
       }
 
       // flush the rest of withdraws
@@ -168,9 +174,18 @@ export default class Finalizer {
     calleds: WithdrawMsgWithMeta[],
     faileds: WithdrawMsgWithMeta[]
   ): void {
+    // log the failed list
+    if (0 < faileds.length) {
+      this.logger.warn(
+        `[finalizer] failed(${faileds.length}), txHashes: ${faileds.map(
+          (fail) => fail.l2toL1Msg.txHash
+        )}, errs: ${faileds.map((fail) => fail.err.message).join(', ')}`
+      )
+    }
+
     // evict the processed messages, then enqueue the failed messages
-    this.queue.evict(...calleds.map((call) => call.l2toL1Msg))
-    this.queue.enqueue(...faileds.map((call) => call.l2toL1Msg))
+    this.queue.evictIgnoreNotFound(...calleds.map((call) => call.l2toL1Msg))
+    this.queue.enqueueNoDuplicate(...faileds.map((call) => call.l2toL1Msg))
 
     const failedIds = new Set(faileds.map((failed) => failed.l2toL1Msg.txHash))
     const succeeds = calleds.filter(
@@ -192,15 +207,6 @@ export default class Finalizer {
         })
       }
     }
-
-    // log the failed list
-    if (0 < faileds.length) {
-      this.logger.warn(
-        `[finalizer] failed(${faileds.length}), txHashes: ${faileds.map(
-          (fail) => fail.l2toL1Msg.txHash
-        )}, errs: ${faileds.map((fail) => fail.err.message).join(', ')}`
-      )
-    }
   }
 
   public async stop(): Promise<void> {
@@ -210,12 +216,6 @@ export default class Finalizer {
   }
 
   public appendMessage(...messages: L2toL1Message[]): void {
-    // comment in if the queue is fixed size
-    // if (this.queue.size < this.queue.count + messages.length) {
-    //   throw new Error(
-    //     `will exceed queue size, please increase queue size (current: ${this.queue.size})`
-    //   )
-    // }
     this.queue.enqueueNoDuplicate(...messages)
     this.logger.debug(
       `[finalizer] received txhashes: ${messages.map((m) => m.txHash)}`

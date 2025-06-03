@@ -74,26 +74,62 @@ export default class DynamicSizeQueue<T> {
   }
 
   evict(...items: T[]): void {
+    this._evict(false, ...items)
+  }
+
+  evictIgnoreNotFound(...items: T[]): void {
+    this._evict(true, ...items)
+  }
+
+  _evict(ignoreNotFound: boolean, ...items: T[]): void {
     if (items.length === 0) return
 
     let i = 0 // index for items
+    const noDuplicate: Set<string> = new Set() // to avoid duplicate eviction
     while (i < items.length) {
-      const itemKey = this._findItemKey(items[i])
       const keyPointTo = this._generateKey(items[i])
+      if (noDuplicate.has(keyPointTo)) {
+        i++
+        continue
+      }
+
+      if (!this._has(items[i])) {
+        if (ignoreNotFound) {
+          // skip if the item is not found and ignoreNotFound is true
+          i++
+          continue
+        } else {
+          throw new Error(
+            `Item not found in queue, key: ${keyPointTo}, item: ${JSON.stringify(
+              items[i]
+            )}`
+          )
+        }
+      }
+
+      // Find the key of the item to evict
+      const itemKey = this._findItemKey(items[i])
 
       // fetch the next item on memory, then delete it from storage
       let nextItem = this.deserialize(this.storage.getItem(keyPointTo))
       if (nextItem !== null) {
-        this.storage.removeItem(keyPointTo)
         this.count--
+        this.storage.removeItem(keyPointTo)
       }
 
       // go to the next item
       i++
+      noDuplicate.add(keyPointTo)
 
       // Evic sequential items
       while (nextItem !== null && i < items.length) {
         const keyPointTo2 = this._generateKey(items[i])
+        if (noDuplicate.has(keyPointTo2)) {
+          // skip if the item is already processed
+          i++
+          continue
+        }
+
         const keyOfNextItem = this._generateKey(nextItem)
         if (keyPointTo2 !== keyOfNextItem) {
           // exit if the next index of item is not the next itme in the queue
@@ -103,33 +139,35 @@ export default class DynamicSizeQueue<T> {
         // fetch the next item on memory, then delete it from storage
         nextItem = this.deserialize(this.storage.getItem(keyPointTo2))
         if (nextItem !== null) {
-          this.storage.removeItem(keyPointTo2)
           this.count--
+          this.storage.removeItem(keyPointTo2)
         }
 
         // go to the next item
         i++
+        noDuplicate.add(keyPointTo2)
       }
 
-      // update tail
       if (nextItem === null) {
+        // update tail
         if (itemKey === this.rootKey) {
           this.tailKey = ''
         } else {
           this.tailKey = itemKey
         }
-        this.storage.removeItem(itemKey)
         this.count--
-        break
+        this.storage.removeItem(itemKey)
+      } else {
+        // overwrite the evicted item with the next item
+        this.storage.setItem(itemKey, this.serialize(nextItem))
       }
-
-      // overwrite the evicted item with the next item
-      this.storage.setItem(itemKey, this.serialize(nextItem))
     }
 
     // santity check
     if (i !== items.length) {
-      throw new Error('Not all items were evicted from the queue')
+      throw new Error(
+        `Not all items were evicted, expected ${items.length} but evicted ${i}`
+      )
     }
   }
 

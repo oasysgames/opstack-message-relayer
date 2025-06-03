@@ -183,6 +183,7 @@ export class TransactionManager {
         if (bumpFeesImmediately) {
           tx = this.increaseGasPrice(tx)
         }
+        // if (Math.random() < 0.7) throw new Error(`txmgr: random error`) // for testing
         res = await this.wallet.sendTransaction(tx)
         break
       } catch (e) {

@@ -2,12 +2,13 @@ import { Logger, StandardMetrics } from '@eth-optimism/common-ts'
 import {
   CrossChainMessenger,
   MessageStatus,
-  CrossChainMessage,
   MessageDirection,
 } from '@eth-optimism/sdk'
+import DynamicSizeQueue from './queue-storage'
 import { Multicaller, CallWithMeta } from './multicaller'
 import { readFromFile, writeToFile } from './utils'
 import { MessageRelayerMetrics, MessageRelayerState } from './service_types'
+import { L2toL1Message } from './finalize_worker'
 import { TransactionManager, ManagingTx } from './transaction-manager'
 
 // The original address of `L2ERC721Bridge` is `0x4200000000000000000000000000000000000014`
@@ -16,6 +17,7 @@ const OasysL2ERC721BridgeAddress = '0x6200000000000000000000000000000000000001'
 
 export default class Prover {
   public state: MessageRelayerState
+  public queue: DynamicSizeQueue<L2toL1Message>
 
   private metrics: MessageRelayerMetrics & StandardMetrics
   private logger: Logger
@@ -25,7 +27,7 @@ export default class Prover {
   private reorgSafetyDepth: number
   private messenger: CrossChainMessenger
   private multicaller: Multicaller
-  private postMessage: (succeeds: CallWithMeta[]) => void
+  private postMessage: (succeeds: L2toL1Message[]) => void
   private initalIteration: boolean = true
   private txmgr: TransactionManager | undefined
 
@@ -33,13 +35,14 @@ export default class Prover {
     metrics: MessageRelayerMetrics & StandardMetrics,
     logger: Logger,
     stateFilePath: string,
+    queuePath: string,
     fromL2TransactionIndex: number | undefined,
     l2blockConfirmations: number,
     reorgSafetyDepth: number,
     messenger: CrossChainMessenger,
     multicaller: Multicaller,
     txmgr: TransactionManager | undefined,
-    postMessage: (succeeds: CallWithMeta[]) => void
+    postMessage: (succeeds: L2toL1Message[]) => void
   ) {
     this.stateFilePath = stateFilePath
     this.metrics = metrics
@@ -50,6 +53,7 @@ export default class Prover {
     this.messenger = messenger
     this.multicaller = multicaller
     this.postMessage = postMessage
+    this.queue = new DynamicSizeQueue<L2toL1Message>(queuePath)
 
     if (txmgr) {
       this.txmgr = txmgr
@@ -121,24 +125,15 @@ export default class Prover {
     this.updateHighestFinalizedL2(finalized)
   }
 
-  public async handleSingleBlock(
-    height: number,
-    calldatas: CallWithMeta[] = []
-  ): Promise<CallWithMeta[]> {
+  public async handleSingleBlock(height: number): Promise<void> {
     const block = await this.messenger.l2Provider.getBlockWithTransactions(
       height
     )
-    if (block === null || block.transactions.length === 0) {
-      return calldatas
-    }
+    if (!block || block.transactions.length === 0) return
 
     this.logger.info(
       `[prover] blockNumber: ${block.number}, txs: ${block.transactions.length}`
     )
-
-    const target =
-      this.messenger.contracts.l1.OptimismPortal.address ||
-      this.messenger.contracts.l1.OptimismPortal.target
 
     const l2StandardBridge = this.messenger.contracts.l2.L2StandardBridge
       .address
@@ -165,25 +160,71 @@ export default class Prover {
       }
 
       // pick the first message from the list, as follow the code inside of messenger.toCrossChainMessage
-      const message: CrossChainMessage = messages[0]
-      const status = await this.messenger.getMessageStatus(message)
+      const l2toL1Msg = { message: messages[0], txHash, blockHeight: height }
+      this.queue.enqueueNoDuplicate(l2toL1Msg)
+    }
+
+    return
+  }
+
+  public async handleMultipleBlock(): Promise<void> {
+    const latest = await this.messenger.l2Provider.getBlockNumber()
+
+    if (latest === this.state.highestKnownL2) {
+      return
+    } else if (latest < this.state.highestKnownL2) {
+      // Reorg detected
+      this.handleL2Reorg(latest)
+    }
+
+    // update latest known L2 height
+    this.updateHighestKnownL2(latest)
+
+    const start = this.startScanHeight()
+    const end = this.endScanHeight(start)
+    this.logger.info(`[prover] scan block: ${start} - ${end}`)
+
+    // Extract l2ToL1 messages from the blocks
+    for (let h = start; h <= end; h++) {
+      await this.handleSingleBlock(h)
+    }
+
+    // Prove all messages in queue, in where there are 2 cases:
+    // - messages in the range of (start, end) are not proven yet
+    // - messages failed to prove in the previous iteration
+    await this.proveAll()
+
+    // update the proven L2 height
+    this.updateHighestProvenL2(end)
+  }
+
+  public async proveAll() {
+    let calldatas: CallWithMeta[] = []
+
+    // Process all messages in the queue
+    const messages = this.queue.peekAll()
+    for (const l2toL1Msg of messages) {
+      const txHash = l2toL1Msg.txHash
+      const status = await this.messenger.getMessageStatus(l2toL1Msg.message)
+      const callWithMeta = {
+        target:
+          this.messenger.contracts.l1.OptimismPortal.address ||
+          this.messenger.contracts.l1.OptimismPortal.target,
+        callData: null,
+        blockHeight: l2toL1Msg.blockHeight,
+        txHash,
+        message: l2toL1Msg.message,
+        err: null,
+      }
+
       this.logger.debug(
         `[prover] txHash: ${txHash}, status: ${MessageStatus[status]})`
       )
 
-      const callWithMeta = {
-        target,
-        callData: null,
-        blockHeight: height,
-        txHash,
-        message,
-        err: null,
-      }
-
       if (status === MessageStatus.STATE_ROOT_NOT_PUBLISHED) {
         this.logger.info(`[prover] waits state root: ${txHash}`)
         // exit if the tx is not ready to prove
-        throw new Error(`not state root published: ${txHash}`)
+        return
       } else if (status === MessageStatus.READY_TO_PROVE) {
         // ok
       } else if (
@@ -192,10 +233,12 @@ export default class Prover {
       ) {
         // enqueue the message to the finalizer just in case
         this.logger.info(`[prover] enqueue to finalizer for sure: ${txHash}`)
-        this.postMessage([callWithMeta])
+        this.postMessage([l2toL1Msg])
+        this.queue.evictIgnoreNotFound(l2toL1Msg) // evict from queue
         continue
       } else {
         // skip, mostly already finalized
+        this.queue.evictIgnoreNotFound(l2toL1Msg) // evict from queue
         continue
       }
 
@@ -227,56 +270,13 @@ export default class Prover {
       if (faileds.length > 0) throw new Error('mulicall failed')
 
       // reset calldata list
-      calldatas = []
-    }
-
-    return calldatas
-  }
-
-  public async handleMultipleBlock(): Promise<void> {
-    const latest = await this.messenger.l2Provider.getBlockNumber()
-
-    if (latest === this.state.highestKnownL2) {
-      return
-    } else if (latest < this.state.highestKnownL2) {
-      // Reorg detected
-      this.handleL2Reorg(latest)
-    }
-
-    // update latest known L2 height
-    this.updateHighestKnownL2(latest)
-
-    let calldatas: CallWithMeta[] = []
-    let waitsStateRoot = false
-    const start = this.startScanHeight()
-    const end = this.endScanHeight(start)
-
-    this.logger.info(`[prover] scan block: ${start} - ${end}`)
-
-    for (let h = start; h <= end; h++) {
-      try {
-        calldatas = await this.handleSingleBlock(h, calldatas)
-      } catch (err) {
-        if (err.message.includes('not state root published')) {
-          waitsStateRoot = true
-          break
-        } else if (err.message.includes('mulicall failed')) {
-          return
-        }
-        throw err
-      }
+      calldatas.length = 0
     }
 
     // flush the left calldata
     if (0 < calldatas.length) {
       const faileds = await this.multicaller?.multicall(calldatas)
       if (!this.txmgr) this.handleMulticallResult(calldatas, faileds)
-      if (faileds.length > 0) return
-    }
-
-    // update the proven L2 height
-    if (!waitsStateRoot) {
-      this.updateHighestProvenL2(end)
     }
   }
 
@@ -287,6 +287,19 @@ export default class Prover {
     calleds: CallWithMeta[],
     faileds: CallWithMeta[]
   ): void {
+    // log the called list
+    if (0 < faileds.length) {
+      this.logger.warn(
+        `[prover] failed(${faileds.length}), txHash: ${faileds.map(
+          (call) => call.txHash
+        )}, errs: ${faileds.map((call) => call.err.message).join(', ')}`
+      )
+    }
+
+    // evict the processed messages, then enqueue the failed messages
+    this.queue.evictIgnoreNotFound(...calleds)
+    this.queue.enqueueNoDuplicate(...faileds)
+
     const failedIds = new Set(faileds.map((failed) => failed.txHash))
     const succeeds = calleds.filter((call) => !failedIds.has(call.txHash))
     if (0 < succeeds.length) {
@@ -300,18 +313,15 @@ export default class Prover {
         this.metrics.numProvenMessages.inc(succeeds.length)
       }
       // post the proven messages to the finalizer
-      this.postMessage(succeeds)
-    }
-
-    // log the called list, then rewind the checked L2 height
-    if (0 < faileds.length) {
-      this.logger.warn(
-        `[prover] failed(${faileds.length}), txHash: ${faileds.map(
-          (call) => call.txHash
-        )}, errs: ${faileds.map((call) => call.err.message).join(', ')}`
+      this.postMessage(
+        succeeds.map((call) => {
+          return {
+            txHash: call.txHash,
+            message: call.message,
+            blockHeight: call.blockHeight,
+          } as L2toL1Message
+        })
       )
-      // rewind the checked L2 height by the lowest failed call block height - 1
-      this.updateLowestCheckedL2(faileds)
     }
   }
 
@@ -347,22 +357,6 @@ export default class Prover {
     if (0 < highest) highest -= 1 // subtract `1` to assure the all transaction in block is finalized
     if (highest <= this.state.highestProvenL2) return false
     this.updateHighestProvenL2(highest)
-    return true
-  }
-
-  protected updateLowestCheckedL2(calldatas: CallWithMeta[]): boolean {
-    let lowest = calldatas.reduce((minCall, currentCall) => {
-      if (!minCall || currentCall.blockHeight < minCall.blockHeight) {
-        return currentCall
-      }
-      return minCall
-    }).blockHeight
-    if (0 < lowest) lowest -= 1 // subtract `1` to assure the all transaction in block is finalized
-    if (lowest >= this.state.highestProvenL2) return false
-    this.logger.warn(
-      `[prover] rewind highestProvenL2: ${this.state.highestProvenL2} -> ${lowest}`
-    )
-    this.updateHighestProvenL2(lowest)
     return true
   }
 
