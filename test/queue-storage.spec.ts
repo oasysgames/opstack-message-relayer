@@ -40,6 +40,17 @@ describe('FixedSizeQueue', function () {
       )
       expect(queue.count).to.equal(9)
       expect(queue.tailKey).to.equal('0x9')
+      expect(queue.peekAll().map((msg) => msg.txHash)).to.deep.equal([
+        '0x1',
+        '0x2',
+        '0x3',
+        '0x4',
+        '0x5',
+        '0x6',
+        '0x7',
+        '0x8',
+        '0x9',
+      ])
 
       // enqueue no duplicate
       queue.enqueueNoDuplicate(
@@ -87,6 +98,211 @@ describe('FixedSizeQueue', function () {
 
       queue.reset()
       expect(queue.count).to.equal(0)
+    })
+  })
+
+  describe('evict', function () {
+    let queue: DynamicSizeQueue<TestMessage>
+    beforeEach(async function () {
+      const obj = await setup()
+      queue = obj.queue
+    })
+    afterEach(function () {
+      queue.reset()
+    })
+
+    it('middle | sequence', async function () {
+      queue.evict({ txHash: '0x2' }, { txHash: '0x3' })
+
+      expect(queue.count).to.equal(3)
+      expect(queue.tailKey).to.equal('0x5')
+      expect(queue.peekAll().map((msg) => msg.txHash)).to.deep.equal([
+        '0x1',
+        '0x4',
+        '0x5',
+      ])
+      for (let i = 0; i < 3; i++) {
+        queue.dequeue()
+      }
+      expect(queue.count).to.equal(0)
+      expect(queue.tailKey).to.equal('')
+    })
+
+    it('head | sequence', async function () {
+      queue.evict({ txHash: '0x1' }, { txHash: '0x2' })
+
+      expect(queue.count).to.equal(3)
+      expect(queue.tailKey).to.equal('0x5')
+      expect(queue.peekAll().map((msg) => msg.txHash)).to.deep.equal([
+        '0x3',
+        '0x4',
+        '0x5',
+      ])
+      for (let i = 0; i < 3; i++) {
+        queue.dequeue()
+      }
+      expect(queue.count).to.equal(0)
+      expect(queue.tailKey).to.equal('')
+    })
+
+    it('tail | sequence', async function () {
+      queue.evict({ txHash: '0x4' }, { txHash: '0x5' })
+
+      expect(queue.count).to.equal(3)
+      expect(queue.tailKey).to.equal('0x3')
+      expect(queue.peekAll().map((msg) => msg.txHash)).to.deep.equal([
+        '0x1',
+        '0x2',
+        '0x3',
+      ])
+      for (let i = 0; i < 3; i++) {
+        queue.dequeue()
+      }
+      expect(queue.count).to.equal(0)
+      expect(queue.tailKey).to.equal('')
+    })
+
+    it('middle | not sequence', async function () {
+      queue.evict({ txHash: '0x2' }, { txHash: '0x4' })
+
+      expect(queue.count).to.equal(3)
+      expect(queue.tailKey).to.equal('0x5')
+      expect(queue.peekAll().map((msg) => msg.txHash)).to.deep.equal([
+        '0x1',
+        '0x3',
+        '0x5',
+      ])
+      for (let i = 0; i < 3; i++) {
+        queue.dequeue()
+      }
+      expect(queue.count).to.equal(0)
+      expect(queue.tailKey).to.equal('')
+    })
+
+    it('head and tail | not sequence', async function () {
+      queue.evict({ txHash: '0x1' }, { txHash: '0x5' })
+
+      expect(queue.count).to.equal(3)
+      expect(queue.tailKey).to.equal('0x4')
+      expect(queue.peekAll().map((msg) => msg.txHash)).to.deep.equal([
+        '0x2',
+        '0x3',
+        '0x4',
+      ])
+      for (let i = 0; i < 3; i++) {
+        queue.dequeue()
+      }
+      expect(queue.count).to.equal(0)
+      expect(queue.tailKey).to.equal('')
+    })
+
+    it('all', async function () {
+      queue.evict(
+        { txHash: '0x1' },
+        { txHash: '0x2' },
+        { txHash: '0x3' },
+        { txHash: '0x4' },
+        { txHash: '0x5' }
+      )
+
+      expect(queue.count).to.equal(0)
+      expect(queue.tailKey).to.equal('')
+      expect(queue.peekAll().map((msg) => msg.txHash)).to.deep.equal([])
+    })
+
+    it('inorder | partial', async function () {
+      queue.evict({ txHash: '0x4' }, { txHash: '0x5' }, { txHash: '0x1' })
+      expect(queue.count).to.equal(2)
+      expect(queue.tailKey).to.equal('0x3')
+      expect(queue.peekAll().map((msg) => msg.txHash)).to.deep.equal([
+        '0x2',
+        '0x3',
+      ])
+    })
+
+    it('inorder | all', async function () {
+      queue.evict(
+        { txHash: '0x2' },
+        { txHash: '0x4' },
+        { txHash: '0x5' },
+        { txHash: '0x1' },
+        { txHash: '0x3' }
+      )
+      expect(queue.count).to.equal(0)
+      expect(queue.peekAll().map((msg) => msg.txHash)).to.deep.equal([])
+      expect(queue.tailKey).to.equal('')
+    })
+
+    it('dupplicate', async function () {
+      queue.evict(
+        { txHash: '0x5' },
+        { txHash: '0x3' },
+        { txHash: '0x5' },
+        { txHash: '0x1' },
+        { txHash: '0x3' },
+        { txHash: '0x1' },
+        { txHash: '0x5' }
+      )
+
+      expect(queue.count).to.equal(2)
+      expect(queue.tailKey).to.equal('0x4')
+      expect(queue.peekAll().map((msg) => msg.txHash)).to.deep.equal([
+        '0x2',
+        '0x4',
+      ])
+    })
+
+    it('evict not exist | err', function () {
+      try {
+        queue.evict({ txHash: '0x6' })
+        throw new Error('Should not reach here')
+      } catch (e: any) {
+        const expectedMessage = 'Item not found in queue'
+        expect(e.message.substr(0, expectedMessage.length)).to.equal(
+          expectedMessage
+        )
+      }
+
+      try {
+        queue.evict(
+          { txHash: '0x4' },
+          { txHash: '0x5' },
+          { txHash: '0x6' },
+          { txHash: '0x3' }
+        )
+        throw new Error('Should not reach here')
+      } catch (e: any) {
+        const expectedMessage = 'Item not found in queue'
+        expect(e.message.substr(0, expectedMessage.length)).to.equal(
+          expectedMessage
+        )
+      }
+
+      expect(queue.count).to.equal(3)
+      expect(queue.tailKey).to.equal('0x3')
+    })
+
+    it('evit not exist | no err', function () {
+      try {
+        queue.evictIgnoreNotFound({ txHash: '0x6' })
+        throw new Error('Should reach here')
+      } catch (e: any) {
+        expect(e.message).to.equal('Should reach here')
+      }
+
+      try {
+        queue.evictIgnoreNotFound(
+          { txHash: '0x4' },
+          { txHash: '0x5' },
+          { txHash: '0x6' },
+          { txHash: '0x3' }
+        )
+        throw new Error('Should reach here')
+      } catch (e: any) {
+        expect(e.message).to.equal('Should reach here')
+      }
+      expect(queue.count).to.equal(2)
+      expect(queue.tailKey).to.equal('0x2')
     })
   })
 

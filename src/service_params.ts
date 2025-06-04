@@ -21,6 +21,7 @@ export type MessageRelayerOptions = {
   stateFilePath?: string
   reorgSafetyDepth?: number
   maxPendingTxs?: number
+  queuePathProver?: string
   queuePath?: string
   finalizerPrivateKey: string
 }
@@ -104,9 +105,14 @@ export const serviceOptionsSpec: any = {
     desc: 'The maximum number of pending transactions to keep in the queue.',
     default: 1,
   },
+  queuePathProver: {
+    validator: validators.str,
+    desc: 'Path to the queue store for the prover',
+    default: './.queuestore-prover',
+  },
   queuePath: {
     validator: validators.str,
-    desc: 'Number of messages to queue before rejecting new messages',
+    desc: 'Path to the queue store for the finalizer',
     default: './.queuestore',
   },
   finalizerPrivateKey: {

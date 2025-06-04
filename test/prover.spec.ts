@@ -7,6 +7,7 @@ import { TransactionManager } from '../src/transaction-manager'
 import { sleep, rand, deleteFileIfExists } from '../src/utils'
 
 const stateFilePath = './test/state.test.json'
+const queuePath = './.queuestoretest'
 const l2blockConfirmations = 8
 const reorgSafetyDepth = 4
 const succeededCalldatas: CallWithMeta[] = []
@@ -56,6 +57,7 @@ describe('Prover', function () {
       metrics,
       logger,
       stateFilePath,
+      queuePath,
       0,
       l2blockConfirmations,
       reorgSafetyDepth,
@@ -124,6 +126,7 @@ describe('Prover', function () {
   describe('handleSingleBlock', function () {
     it('succeed: without txmgr', async function () {
       const { counter, prover, messenger, signers } = await setup()
+      prover.queue.reset()
       const height = 134
       const calldatas = [
         {
@@ -168,161 +171,106 @@ describe('Prover', function () {
         },
       }
       messenger.setBlocks(blocks)
+
       // @ts-ignore
-      const returns = await prover.handleSingleBlock(height, calldatas)
+      await prover.handleSingleBlock(height, calldatas)
 
-      expect(returns.length).to.equal(1)
-      expect(returns[0].txHash).to.equal('0x5') // this is the last tx in the block, fail because it's over the target gas
-      expect(prover.highestProvenL2()).to.equal(height)
-      expect(await counter.get()).to.equal(3)
-      expect(succeededCalldatas.map((c) => c.txHash)).to.members([
-        '0x3',
-        '0x1',
-        '0x2',
-        '0x4',
-      ])
+      expect(prover.queue.count).to.equal(3)
+      prover.queue.reset()
     })
+  })
 
-    it('succeed: with txmgr', async function () {
-      const withTxmgr = true
-      const { counter, prover, messenger } = await setup(withTxmgr)
-      const height = 134
-      const calldatas = [
-        {
-          target: counter.address,
-          callData: (await counter.populateTransaction.incSimple()).data,
-          blockHeight: height - 1,
-          txHash: '0x1',
-          message: '0x0',
-        },
-        {
-          target: counter.address,
-          callData: (await counter.populateTransaction.incSimple()).data,
-          blockHeight: height - 1,
-          txHash: '0x2',
-          message: '0x0',
-        },
-      ]
+  describe('handleMultipleBlock', function () {
+    it('succeed', async function () {
+      const { counter, prover, messenger } = await setup()
+      prover.queue.reset()
+      const highestKnown = 134
+      const provenL2 = highestKnown - l2blockConfirmations
+      const finalizedL2 = provenL2
+      prover.updateHighestKnownL2(highestKnown)
+      prover.updateHighestProvenL2(provenL2)
+      prover.updateHighestFinalizedL2(finalizedL2)
+
       const blocks = {
-        [height]: {
+        [provenL2]: {
+          number: provenL2,
+          transactions: [],
+        },
+        [provenL2 + 1]: {
+          number: provenL2 + 1,
           transactions: [
             {
-              number: height,
+              number: provenL2 + 1,
+              hash: '0x1',
+              to: counter.address,
+            },
+            {
+              number: provenL2 + 1,
+              hash: '0x2',
+              to: counter.address,
+            },
+          ],
+        },
+        [provenL2 + 2]: {
+          number: provenL2 + 2,
+          transactions: [
+            {
+              number: provenL2 + 2,
               hash: '0x3',
               to: counter.address,
             },
             {
-              number: height,
+              number: provenL2 + 2,
               hash: '0x4',
               to: counter.address,
             },
             {
-              number: height,
+              number: provenL2 + 2,
               hash: '0x5',
+              to: counter.address,
+            },
+          ],
+        },
+        [provenL2 + 3]: {
+          number: provenL2 + 3,
+          transactions: [
+            {
+              number: provenL2 + 3,
+              hash: '0x6',
               to: counter.address,
             },
           ],
         },
       }
       messenger.setBlocks(blocks)
+      messenger.setBlockNumber(highestKnown + 2)
+      prover.startScanHeight() // set `this.initalIteratio` = false
       // @ts-ignore
-      const returns = await prover.handleSingleBlock(height, calldatas)
+      await prover.handleMultipleBlock()
 
-      // wait until tx confirmed
-      await sleep(55)
-      expect(returns.length).to.equal(1)
-      expect(returns[0].txHash).to.equal('0x5')
-      expect(prover.highestProvenL2()).to.equal(height - 1)
-      expect(await counter.get()).to.equal(3)
+      expect(prover.highestKnownL2()).to.equal(highestKnown + 2)
+      expect(prover.highestProvenL2()).to.equal(provenL2 + 2)
+      expect(prover.highestFinalizedL2()).to.equal(finalizedL2)
+      expect(await counter.get()).to.equal(4)
       expect(succeededCalldatas.map((c) => c.txHash)).to.members([
-        '0x3',
         '0x1',
         '0x2',
+        '0x3',
         '0x4',
+        '0x5',
       ])
+      expect(prover.startScanHeight()).to.equal(provenL2 + 3)
+      // expect(prover.endScanHeight()).to.equal(provenL2 + 2)
+
+      messenger.setBlockNumber(highestKnown + 3)
+
+      // @ts-ignore
+      await prover.handleMultipleBlock()
+      expect(prover.highestKnownL2()).to.equal(highestKnown + 3)
+      expect(prover.highestProvenL2()).to.equal(provenL2 + 3)
+      expect(prover.highestFinalizedL2()).to.equal(finalizedL2)
+
+      prover.queue.reset()
     })
   })
-
-  // describe('handleMultipleBlock', function () {
-  //   it('succeed', async function () {
-  //     const { counter, prover, messenger } = await setup()
-  //     const highestKnown = 134
-  //     const provenL2 = highestKnown - l2blockConfirmations
-  //     const finalizedL2 = provenL2
-  //     prover.updateHighestKnownL2(highestKnown)
-  //     prover.updateHighestProvenL2(provenL2)
-  //     prover.updateHighestFinalizedL2(finalizedL2)
-
-  //     const blocks = {
-  //       [provenL2]: {
-  //         number: provenL2,
-  //         transactions: [],
-  //       },
-  //       [provenL2 + 1]: {
-  //         number: provenL2 + 1,
-  //         transactions: [
-  //           {
-  //             number: provenL2 + 1,
-  //             hash: '0x1',
-  //           },
-  //           {
-  //             number: provenL2 + 1,
-  //             hash: '0x2',
-  //           },
-  //         ],
-  //       },
-  //       [provenL2 + 2]: {
-  //         number: provenL2 + 2,
-  //         transactions: [
-  //           {
-  //             number: provenL2 + 2,
-  //             hash: '0x3',
-  //           },
-  //           {
-  //             number: provenL2 + 2,
-  //             hash: '0x4',
-  //           },
-  //           {
-  //             number: provenL2 + 2,
-  //             hash: '0x5',
-  //           },
-  //         ],
-  //       },
-  //       [provenL2 + 3]: {
-  //         number: provenL2 + 3,
-  //         transactions: [
-  //           {
-  //             number: provenL2 + 3,
-  //             hash: '0x6',
-  //           },
-  //         ],
-  //       },
-  //     }
-  //     messenger.setBlocks(blocks)
-  //     messenger.setBlockNumber(highestKnown + 2)
-  //     // @ts-ignore
-  //     await prover.handleMultipleBlock()
-
-  //     expect(prover.highestKnownL2()).to.equal(highestKnown + 2)
-  //     expect(prover.highestProvenL2()).to.equal(provenL2 + 2)
-  //     expect(prover.highestFinalizedL2()).to.equal(finalizedL2)
-  //     expect(await counter.get()).to.equal(4)
-  //     expect(succeededCalldatas.map((c) => c.txHash)).to.members([
-  //       '0x2',
-  //       '0x3',
-  //       '0x4',
-  //       '0x5',
-  //     ])
-  //     expect(prover.startScanHeight()).to.equal(provenL2 + 3)
-  //     expect(prover.endScanHeight()).to.equal(provenL2 + 2)
-
-  //     messenger.setBlockNumber(highestKnown + 3)
-
-  //     // @ts-ignore
-  //     await prover.handleMultipleBlock()
-  //     expect(prover.highestKnownL2()).to.equal(highestKnown + 3)
-  //     expect(prover.highestProvenL2()).to.equal(provenL2 + 2)
-  //     expect(prover.highestFinalizedL2()).to.equal(finalizedL2)
-  //   })
-  // })
 })

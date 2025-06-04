@@ -27,6 +27,10 @@ export default class FixedSizeQueue<T> {
     return this.count === 0
   }
 
+  reset(): void {
+    throw new Error('Reset operation is not supported in FixedSizeQueue')
+  }
+
   enqueue(...items: T[]): void {
     for (const item of items) {
       if (this.isFull()) {
@@ -60,10 +64,25 @@ export default class FixedSizeQueue<T> {
     return item
   }
 
+  evict(...items: T[]): void {
+    throw new Error('Evict operation is not supported in FixedSizeQueue')
+  }
+
   peek(): T | null {
     if (this.isEmpty()) {
       throw new Error('Queue is empty')
     }
     return this.queue[this.front]
+  }
+
+  peekAll(): T[] {
+    if (this.isEmpty()) {
+      return []
+    }
+    const items: T[] = []
+    for (let i = 0; i < this.count; i++) {
+      items.push(this.queue[(this.front + i) % this.size]!)
+    }
+    return items
   }
 }

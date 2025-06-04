@@ -7,7 +7,6 @@ import {
 } from '@eth-optimism/sdk'
 import { Contract } from 'ethers'
 import DynamicSizeQueue from './queue-storage'
-import FixedSizeQueue from './queue-mem'
 import { Portal, WithdrawMsgWithMeta } from './portal'
 import { L2toL1Message } from './finalize_worker'
 import { FinalizerMessage } from './finalize_worker'
@@ -15,7 +14,7 @@ import { TransactionManager, ManagingTx } from './transaction-manager'
 
 export default class Finalizer {
   public highestFinalizedL2: number = 0
-  public queue: DynamicSizeQueue<L2toL1Message> | FixedSizeQueue<L2toL1Message>
+  public queue: DynamicSizeQueue<L2toL1Message>
   public portal: Portal
   public running: boolean
 
@@ -25,7 +24,7 @@ export default class Finalizer {
   private logger: Logger
   private messenger: CrossChainMessenger
   private finalizedNotifyer: (msg: FinalizerMessage) => void
-  private txmgr: TransactionManager
+  private txmgr: TransactionManager | undefined
 
   constructor(
     queuePath: string,
@@ -34,26 +33,21 @@ export default class Finalizer {
     messenger: CrossChainMessenger,
     outputOracle: Contract,
     portal: Portal,
-    txmgr: TransactionManager,
+    txmgr: TransactionManager | undefined,
     notifyer: (msg: FinalizerMessage) => void
   ) {
     logger.info(`[finalizer] queuePath: ${queuePath}`)
-    if (queuePath !== '') {
-      this.queue = new DynamicSizeQueue<L2toL1Message>(queuePath)
-    } else {
-      this.queue = new FixedSizeQueue<L2toL1Message>(1024)
-    }
+    this.queue = new DynamicSizeQueue<L2toL1Message>(queuePath)
     this.loopIntervalMs = loopIntervalMs
     this.logger = logger
     this.messenger = messenger
     this.outputOracle = outputOracle
     this.portal = portal
     this.finalizedNotifyer = notifyer
-    this.txmgr = txmgr
-  }
 
-  public async start(): Promise<void> {
-    if (this.txmgr) {
+    if (txmgr) {
+      this.txmgr = txmgr
+
       // setup the subscriber to handle the result of the multicall
       const subscriber = (txs: ManagingTx[]) => {
         const calleds: WithdrawMsgWithMeta[] = []
@@ -69,6 +63,9 @@ export default class Finalizer {
       }
       this.txmgr.addSubscriber(subscriber)
     }
+  }
+
+  public async start(): Promise<void> {
     this.logger.info(
       `[finalizer] starting..., loopIntervalMs: ${this.loopIntervalMs}ms`
     )
@@ -76,15 +73,21 @@ export default class Finalizer {
     const itr = async () => {
       let withdraws: WithdrawMsgWithMeta[] = []
 
-      // traverse the queue
-      while (this.queue.count !== 0) {
-        const head = this.queue.peek()
+      // iterate over entire queue
+      const messages = this.queue.peekAll()
+      for (const head of messages) {
         const txHash = head.txHash
         const message = head.message
         const status = await this.messenger.getMessageStatus(message)
         let lowLevelMessage: LowLevelMessage
 
-        if (MessageStatus.READY_FOR_RELAY > status) {
+        if (status <= MessageStatus.READY_TO_PROVE) {
+          // Not yet proven, so skip. Ocacsionally happens when txmgr is used.
+          this.logger.warn(
+            `[finalizer] message is not proven yet, txhash: ${txHash}, blockHeight: ${head.blockHeight}, status: ${status}`
+          )
+          continue
+        } else if (status < MessageStatus.READY_FOR_RELAY) {
           // still in challenge period
           lowLevelMessage = await this.messenger.toLowLevelMessage(message)
 
@@ -99,27 +102,25 @@ export default class Finalizer {
             )
             break
           }
-        } else if (MessageStatus.READY_FOR_RELAY === status) {
+        } else if (status == MessageStatus.READY_FOR_RELAY) {
           // ready for finalize
           lowLevelMessage = await this.messenger.toLowLevelMessage(message)
         } else if (MessageStatus.READY_FOR_RELAY < status) {
           // already finalized
-          this.queue.dequeue() // evict the head from queue
           this.logger.debug(
             `[finalizer] message ${message} is already relayed, txhash: ${txHash}, blockHeight: ${head.blockHeight}`
           )
+          this.queue.evictIgnoreNotFound(head) // // evict from queue
           continue
         }
 
+        // append to list
         const withdraw = {
           ...lowLevelMessage,
-          blockHeight: head.blockHeight,
-          txHash,
+          l2toL1Msg: head,
           err: null,
         }
-
-        withdraws.push(withdraw) // append to list
-        this.queue.dequeue() // evict the head from queue
+        withdraws.push(withdraw)
 
         // Estimate gas cost for the future forecasting the finalize gas cost
         // Compute per withdraw gas by substracting double withdraw gas from single withdraw gas
@@ -137,23 +138,17 @@ export default class Finalizer {
         }
 
         // multicall
-        const faileds = await this.portal?.finalizeWithdrawals(
-          withdraws,
-          this.txmgr
-        )
-        // handle the result if not using txmgr
+        const faileds = await this.portal?.finalizeWithdrawals(withdraws)
+        // handle the result
         if (!this.txmgr) this.handleMulticallResult(withdraws, faileds)
 
         // reset calldata list
-        withdraws = []
+        withdraws.length = 0
       }
 
       // flush the rest of withdraws
       if (0 < withdraws.length) {
-        const faileds = await this.portal?.finalizeWithdrawals(
-          withdraws,
-          this.txmgr
-        )
+        const faileds = await this.portal?.finalizeWithdrawals(withdraws)
         if (!this.txmgr) this.handleMulticallResult(withdraws, faileds)
       }
 
@@ -165,20 +160,41 @@ export default class Finalizer {
 
     // first call
     this.running = true
-    itr()
+    try {
+      await itr()
+    } catch (err) {
+      this.logger.error(
+        `[finalizer] error occurred during finalization: ${err.message}`
+      )
+      throw err
+    }
   }
 
   protected handleMulticallResult(
     calleds: WithdrawMsgWithMeta[],
     faileds: WithdrawMsgWithMeta[]
   ): void {
-    const failedIds = new Set(faileds.map((failed) => failed.txHash))
-    const succeeds = calleds.filter((call) => !failedIds.has(call.txHash))
+    // log the failed list
+    if (0 < faileds.length) {
+      this.logger.warn(
+        `[finalizer] failed(${faileds.length}), txHashes: ${faileds.map(
+          (fail) => fail.l2toL1Msg.txHash
+        )}, errs: ${faileds.map((fail) => fail.err.message).join(', ')}`
+      )
+    }
 
+    // evict the processed messages, then enqueue the failed messages
+    this.queue.evictIgnoreNotFound(...calleds.map((call) => call.l2toL1Msg))
+    this.queue.enqueueNoDuplicate(...faileds.map((call) => call.l2toL1Msg))
+
+    const failedIds = new Set(faileds.map((failed) => failed.l2toL1Msg.txHash))
+    const succeeds = calleds.filter(
+      (call) => !failedIds.has(call.l2toL1Msg.txHash)
+    )
     if (0 < succeeds.length) {
       this.logger.info(
         `[finalizer] succeeded(${succeeds.length}) txHash: ${succeeds.map(
-          (call) => call.txHash
+          (call) => call.l2toL1Msg.txHash
         )}`
       )
       // update the highest finalized L2
@@ -191,13 +207,6 @@ export default class Finalizer {
         })
       }
     }
-
-    // log the failed list with each error message
-    for (const fail of faileds) {
-      this.logger.warn(
-        `[finalizer] failed to finalize: ${fail.txHash}, err: ${fail.err.message}`
-      )
-    }
   }
 
   public async stop(): Promise<void> {
@@ -207,12 +216,6 @@ export default class Finalizer {
   }
 
   public appendMessage(...messages: L2toL1Message[]): void {
-    // comment in if the queue is fixed size
-    // if (this.queue.size < this.queue.count + messages.length) {
-    //   throw new Error(
-    //     `will exceed queue size, please increase queue size (current: ${this.queue.size})`
-    //   )
-    // }
     this.queue.enqueueNoDuplicate(...messages)
     this.logger.debug(
       `[finalizer] received txhashes: ${messages.map((m) => m.txHash)}`
@@ -235,11 +238,14 @@ export default class Finalizer {
 
   protected updateHighestFinalized(withdraws: WithdrawMsgWithMeta[]): boolean {
     let highest = withdraws.reduce((maxCall, currentCall) => {
-      if (!maxCall || currentCall.blockHeight > maxCall.blockHeight) {
+      if (
+        !maxCall ||
+        currentCall.l2toL1Msg.blockHeight > maxCall.l2toL1Msg.blockHeight
+      ) {
         return currentCall
       }
       return maxCall
-    }).blockHeight
+    }).l2toL1Msg.blockHeight
     if (0 < highest) highest -= 1 // subtract `1` to assure the all transaction in block is finalized
     if (highest <= this.highestFinalizedL2) return false
 

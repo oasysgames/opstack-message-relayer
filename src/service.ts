@@ -17,7 +17,7 @@ import {
   serviceOptionsSpec,
   serviseMetricsSpec,
 } from './service_params'
-import { Multicaller, CallWithMeta } from './multicaller'
+import { Multicaller } from './multicaller'
 import FinalizeWorkCreator from './worker_creator'
 import { FinalizerMessage, L2toL1Message } from './finalize_worker'
 import { MessageRelayerMetrics, MessageRelayerState } from './service_types'
@@ -88,11 +88,25 @@ export class MessageRelayerService extends BaseServiceV2<
       bedrock: true,
     })
 
+    let txmgr: TransactionManager | undefined = undefined
+    if (1 < this.options.maxPendingTxs) {
+      // temporary fixed as 0
+      // If you're not using txmgr, the confirmationNumber will be zero.
+      // tx.wait() will not confirm any blocks.
+      const confirmationNumber = 0
+      txmgr = new TransactionManager(
+        this.wallet,
+        this.options.maxPendingTxs,
+        confirmationNumber
+      )
+    }
+
     this.multicaller = new Multicaller(
       this.options.multicallAddress,
       this.wallet,
       this.options.multicallTargetGas,
-      this.options.gasMultiplier
+      this.options.gasMultiplier,
+      txmgr
     )
 
     const l1RpcEndpoint = (
@@ -125,39 +139,19 @@ export class MessageRelayerService extends BaseServiceV2<
       },
     })
 
-    const toMessages = (calls: CallWithMeta[]): L2toL1Message[] => {
-      return calls.map((call) => {
-        return {
-          message: call.message,
-          txHash: call.txHash,
-          blockHeight: call.blockHeight,
-        }
-      })
-    }
-    let txmgr: TransactionManager
-    if (1 < this.options.maxPendingTxs) {
-      // temporary fixed as 0
-      // If you're not using txmgr, the confirmationNumber will be zero.
-      // tx.wait() will not confirm any blocks.
-      const confirmationNumber = 0
-      txmgr = new TransactionManager(
-        this.wallet,
-        this.options.maxPendingTxs,
-        confirmationNumber
-      )
-    }
     this.prover = new Prover(
       this.metrics,
       this.logger,
       this.options.stateFilePath,
+      this.options.queuePathProver,
       this.options.fromL2TransactionIndex,
       this.options.depositConfirmationBlocks,
       this.options.reorgSafetyDepth,
       this.messenger,
       this.multicaller,
       txmgr,
-      (succeeds: CallWithMeta[]) =>
-        this.finalizeWorkerCreator?.postMessage(toMessages(succeeds))
+      (succeeds: L2toL1Message[]) =>
+        this.finalizeWorkerCreator?.postMessage(succeeds)
     )
     await this.prover.init()
   }

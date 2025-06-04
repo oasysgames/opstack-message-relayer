@@ -5,6 +5,8 @@ import Finalizer from '../src/finalizer'
 import { MockCrossChain, MockLogger } from './mocks'
 import { sleep } from '../src/utils'
 
+const queuePath = './.queuestoretest'
+
 describe('Finalizer', function () {
   async function setup() {
     const signers = await ethers.getSigners()
@@ -41,7 +43,7 @@ describe('Finalizer', function () {
     const logger = new MockLogger()
     // @ts-ignore
     const finalizer = new Finalizer(
-      '',
+      queuePath,
       100,
       logger,
       messenger,
@@ -68,13 +70,24 @@ describe('Finalizer', function () {
   })
 
   describe('appendMessage', function () {
+    let finalizer: Finalizer
+    let portalContract: any
+    beforeEach(async function () {
+      const setupResult = await setup()
+      portalContract = setupResult.portalContract
+      finalizer = setupResult.finalizer
+    })
+    afterEach(async function () {
+      finalizer.queue.reset()
+      await finalizer.stop()
+    })
+
     it('succeed: withdraw during in loop', async function () {
       const messages = [
         { blockHeight: 1, txHash: '1', message: 0x1 },
         { blockHeight: 2, txHash: '2', message: 0x2 },
         { blockHeight: 3, txHash: '3', message: 0x3 },
       ]
-      const { portalContract, finalizer } = await setup()
       // @ts-ignore
       finalizer.appendMessage(...messages)
 
@@ -88,7 +101,6 @@ describe('Finalizer', function () {
         )
         expect(await portalContract.finalizedWithdrawals(hash)).to.true
       }
-      finalizer.stop()
     })
 
     it('succeed: flush remaining calldatas', async function () {
@@ -96,7 +108,6 @@ describe('Finalizer', function () {
         { blockHeight: 1, txHash: '1', message: 0x1 },
         { blockHeight: 2, txHash: '2', message: 0x2 },
       ]
-      const { finalizer } = await setup()
       // @ts-ignore
       finalizer.appendMessage(...messages)
 
@@ -104,7 +115,6 @@ describe('Finalizer', function () {
 
       expect(finalizer.queue.count).to.equal(0)
       expect(finalizer.highestFinalizedL2).to.equal(1)
-      await finalizer.stop()
     })
 
     it('succeed: skip already falized or in challenge period | instant verify', async function () {
@@ -116,7 +126,6 @@ describe('Finalizer', function () {
         { blockHeight: 5, txHash: '5', message: 0x5 },
         { blockHeight: 5, txHash: '5', message: 0x6 },
       ]
-      const { portalContract, finalizer } = await setup()
       // @ts-ignore
       finalizer.appendMessage(...messages)
 
@@ -130,7 +139,6 @@ describe('Finalizer', function () {
         )
         expect(await portalContract.finalizedWithdrawals(hash)).to.true
       }
-      await finalizer.stop()
     })
   })
 })

@@ -1,14 +1,13 @@
-import { BytesLike } from '@ethersproject/bytes'
 import { BigNumber, Contract, Signer } from 'ethers'
 import { LowLevelMessage } from '@eth-optimism/sdk'
 import IOasysPortal from './contracts/IOasysPortal.json'
 import { splitArray } from './utils'
 import { TransactionManager } from './transaction-manager'
+import { L2toL1Message } from './finalize_worker'
 
 export type WithdrawMsgWithMeta = LowLevelMessage & {
-  blockHeight: number
-  txHash: string
-  err: Error
+  l2toL1Msg: L2toL1Message
+  err: Error | null
 }
 
 type WithdrawalTransactionContractCall = {
@@ -31,16 +30,19 @@ export class Portal {
   public gasMultiplier: number
   public targetGas: number
   public contract: Contract
+  private txmgr: TransactionManager | undefined
 
   constructor(
     portalAddress: string,
     wallet: Signer,
     targetGas: number = 1000000,
-    gasMultiplier: number = 1.1
+    gasMultiplier: number = 1.1,
+    txmgr?: TransactionManager
   ) {
     this.contract = new Contract(portalAddress, IOasysPortal.abi, wallet)
     this.targetGas = targetGas
     this.gasMultiplier = gasMultiplier
+    this.txmgr = txmgr
   }
 
   public setGasFieldsToEstimate(gas: number): void {
@@ -61,7 +63,6 @@ export class Portal {
   // Return failed withdraws
   public async finalizeWithdrawals(
     withdraws: WithdrawMsgWithMeta[],
-    txmgr: TransactionManager | undefined,
     callback: (
       hash: string,
       withdraws: WithdrawMsgWithMeta[]
@@ -88,10 +89,10 @@ export class Portal {
 
       // split the array in half and recursively call
       const [firstHalf, secondHalf] = splitArray(withdraws)
-      const results = await this.finalizeWithdrawals(firstHalf, txmgr, callback)
+      const results = await this.finalizeWithdrawals(firstHalf, callback)
       return [
         ...results,
-        ...(await this.finalizeWithdrawals(secondHalf, txmgr, callback)),
+        ...(await this.finalizeWithdrawals(secondHalf, callback)),
       ]
     }
 
@@ -99,22 +100,34 @@ export class Portal {
       gasLimit: ~~(estimatedGas.toNumber() * this.gasMultiplier),
     }
 
-    if (txmgr) {
-      // enqueue the tx to the waiting list
-      const populated =
-        await this.contract.populateTransaction.finalizeWithdrawalTransactions(
+    try {
+      if (this.txmgr) {
+        // enqueue the tx to the waiting list
+        const populated =
+          await this.contract.populateTransaction.finalizeWithdrawalTransactions(
+            calls,
+            overrideOptions
+          )
+        await this.txmgr.enqueueTransaction({
+          populated,
+          meta: structuredClone(withdraws),
+        })
+      } else {
+        // if (Math.random() < 0.7) throw new Error(`finalizer: random error`) // for testing
+        // send the tx directly
+        const tx = await this.contract.finalizeWithdrawalTransactions(
           calls,
           overrideOptions
         )
-      await txmgr.enqueueTransaction({ populated, meta: withdraws })
-    } else {
-      // send the tx directly
-      const tx = await this.contract.finalizeWithdrawalTransactions(
-        calls,
-        overrideOptions
-      )
-      await tx.wait() // wait internally doesn't confirm block.
-      if (callback) callback(tx.hash, withdraws)
+        await tx.wait() // wait internally doesn't confirm block.
+        if (callback) callback(tx.hash, withdraws)
+      }
+    } catch (err) {
+      // if the tx failed, set the error to each withdraw
+      for (const withdraw of withdraws) {
+        withdraw.err = err as Error
+      }
+      return withdraws
     }
 
     return []

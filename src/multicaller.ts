@@ -22,16 +22,19 @@ export class Multicaller {
   public gasMultiplier: number
   public targetGas: number
   public contract: Contract
+  private txmgr: TransactionManager | undefined
 
   constructor(
     multicallAddress: string,
     wallet: Signer,
     targetGas: number = 1000000,
-    gasMultiplier: number = 1.1
+    gasMultiplier: number = 1.1,
+    txmgr?: TransactionManager
   ) {
     this.contract = new Contract(multicallAddress, Multicall2.abi, wallet)
     this.targetGas = targetGas
     this.gasMultiplier = gasMultiplier
+    this.txmgr = txmgr
   }
 
   public isOverTargetGas(size: number): boolean {
@@ -41,7 +44,6 @@ export class Multicaller {
   // Return failed calls
   public async multicall(
     calls: CallWithMeta[],
-    txmgr: TransactionManager | undefined,
     callback: (hash: string, calls: CallWithMeta[]) => void | null = null
   ): Promise<CallWithMeta[] /*failed list*/> {
     const requireSuccess = true
@@ -67,34 +69,43 @@ export class Multicaller {
 
       // split the array in half and recursively call
       const [firstHalf, secondHalf] = splitArray(calls)
-      const results = await this.multicall(firstHalf, txmgr, callback)
-      return [
-        ...results,
-        ...(await this.multicall(secondHalf, txmgr, callback)),
-      ]
+      const results = await this.multicall(firstHalf, callback)
+      return [...results, ...(await this.multicall(secondHalf, callback))]
     }
 
     const overrideOptions = {
       gasLimit: ~~(estimatedGas.toNumber() * this.gasMultiplier),
     }
 
-    if (txmgr) {
-      // enqueue the tx to the waiting list
-      const populated = await this.contract.populateTransaction.tryAggregate(
-        requireSuccess,
-        this.convertToCalls(calls),
-        overrideOptions
-      )
-      await txmgr.enqueueTransaction({ populated, meta: calls })
-    } else {
-      // send the tx directly
-      const tx = await this.contract.tryAggregate(
-        requireSuccess,
-        this.convertToCalls(calls),
-        overrideOptions
-      )
-      await tx.wait() // wait internally doesn't confirm block.
-      if (callback) callback(tx.hash, calls)
+    try {
+      if (this.txmgr) {
+        // enqueue the tx to the waiting list
+        const populated = await this.contract.populateTransaction.tryAggregate(
+          requireSuccess,
+          this.convertToCalls(calls),
+          overrideOptions
+        )
+        await this.txmgr.enqueueTransaction({
+          populated,
+          meta: structuredClone(calls),
+        })
+      } else {
+        // if (Math.random() < 0.7) throw new Error(`prover: random error`) // for testing
+        // send the tx directly
+        const tx = await this.contract.tryAggregate(
+          requireSuccess,
+          this.convertToCalls(calls),
+          overrideOptions
+        )
+        await tx.wait() // wait internally doesn't confirm block.
+        if (callback) callback(tx.hash, calls)
+      }
+    } catch (err) {
+      // if the tx failed, set the error to each call
+      for (const call of calls) {
+        call.err = err as Error
+      }
+      return calls
     }
 
     return []
