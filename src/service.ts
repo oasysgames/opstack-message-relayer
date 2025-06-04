@@ -88,7 +88,7 @@ export class MessageRelayerService extends BaseServiceV2<
       bedrock: true,
     })
 
-    let txmgr: TransactionManager
+    let txmgr: TransactionManager | undefined = undefined
     if (1 < this.options.maxPendingTxs) {
       // temporary fixed as 0
       // If you're not using txmgr, the confirmationNumber will be zero.
