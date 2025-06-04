@@ -267,7 +267,7 @@ export default class Prover {
       // handle the result if not using txmgr
       if (!this.txmgr) this.handleMulticallResult(calldatas, faileds)
       // stop immediately iterating next tx
-      if (faileds.length > 0) throw new Error('mulicall failed')
+      if (faileds.length > 0) throw new Error('multicall failed')
 
       // reset calldata list
       calldatas.length = 0
