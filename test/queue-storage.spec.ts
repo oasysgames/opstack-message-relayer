@@ -252,7 +252,7 @@ describe('FixedSizeQueue', function () {
       ])
     })
 
-    it('evit not exist | err', function () {
+    it('evict not exist | err', function () {
       try {
         queue.evict({ txHash: '0x6' })
         throw new Error('Should not reach here')
